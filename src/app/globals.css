@@ -6,31 +6,49 @@
 
 /* ─────────────────────────────────────────────
    HEMISX CONSOLE — Design Tokens
+   Dark mode palette: blue-tinted navy base,
+   muted accents, balanced contrast for long sessions
 ───────────────────────────────────────────── */
 :root {
-  --color-bg-base:        #070a0d;
-  --color-bg-surface:     #0d1117;
-  --color-bg-elevated:    #141b24;
-  --color-bg-hover:       #1a2535;
-  --color-border:         #1c2a3a;
-  --color-border-bright:  #2a3d54;
-  --color-border-focus:   #3a5570;
-  --color-text-primary:   #dce8f5;
-  --color-text-secondary: #7a9bb5;
-  --color-text-dim:       #3a5570;
-  --color-yellow:         #ffe17c;
-  --color-yellow-dim:     #4a3a00;
-  --color-scanner:        #00e88a;
-  --color-scanner-dim:    #003d24;
-  --color-hemis:          #ff3d3d;
-  --color-hemis-dim:      #4a0000;
-  --color-hemis-orange:   #ff7c3d;
-  --color-blueteam:       #0099ff;
-  --color-blueteam-dim:   #00274d;
-  --color-critical:       #ff3d3d;
-  --color-high:           #ff7c3d;
-  --color-medium:         #ffe17c;
-  --color-low:            #7a9bb5;
+  /* Backgrounds — layered blue-navy with clear step differences */
+  --color-bg-base:        #080d14;
+  --color-bg-surface:     #0e1624;
+  --color-bg-elevated:    #162030;
+  --color-bg-hover:       #1c2d40;
+
+  /* Borders — visible but not harsh */
+  --color-border:         #1e2f46;
+  --color-border-bright:  #2c4464;
+  --color-border-focus:   #3d5c82;
+
+  /* Text — warm blue-grey scale, primary is soft not pure white */
+  --color-text-primary:   #c4d4e8;
+  --color-text-secondary: #6a8aaa;
+  --color-text-dim:       #3a526a;
+
+  /* Brand yellow — slightly warmer, less saturated */
+  --color-yellow:         #efc84a;
+  --color-yellow-dim:     #2a1e00;
+
+  /* Scanner / emerald — softer green, not neon */
+  --color-scanner:        #00b870;
+  --color-scanner-dim:    #002818;
+
+  /* HEMIS / red — muted crimson, readable without burning */
+  --color-hemis:          #e84545;
+  --color-hemis-dim:      #280a0a;
+  --color-hemis-orange:   #e87240;
+
+  /* Blue Team — less saturated blue */
+  --color-blueteam:       #3a9ef5;
+  --color-blueteam-dim:   #001630;
+
+  /* Severity — aligned to accents */
+  --color-critical:       #e84545;
+  --color-high:           #e87240;
+  --color-medium:         #efc84a;
+  --color-low:            #6a8aaa;
+
   --font-sans:   'Inter', system-ui, sans-serif;
   --font-mono:   'JetBrains Mono', 'Fira Code', monospace;
   --font-display:'Space Grotesk', 'Inter', sans-serif;
@@ -51,8 +69,8 @@ body {
 /* ── Tactical grid bg ── */
 .tac-grid {
   background-image:
-    linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+    linear-gradient(rgba(80,140,220,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(80,140,220,0.04) 1px, transparent 1px);
   background-size: 32px 32px;
 }
 
@@ -72,11 +90,11 @@ body {
 .bracket-blueteam::before,.bracket-blueteam::after { border-color: var(--color-blueteam); }
 
 /* ── Pulsing status dot ── */
-.dot-live { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--color-scanner); box-shadow:0 0 6px var(--color-scanner); animation:pulse-dot 2s ease-in-out infinite; }
-.dot-live.red    { background:var(--color-hemis);   box-shadow:0 0 6px var(--color-hemis); }
-.dot-live.blue   { background:var(--color-blueteam);box-shadow:0 0 6px var(--color-blueteam); }
-.dot-live.yellow { background:var(--color-yellow);  box-shadow:0 0 6px var(--color-yellow); }
-@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.25} }
+.dot-live { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--color-scanner); box-shadow:0 0 5px rgba(0,184,112,0.6); animation:pulse-dot 2.4s ease-in-out infinite; }
+.dot-live.red    { background:var(--color-hemis);   box-shadow:0 0 5px rgba(232,69,69,0.6); }
+.dot-live.blue   { background:var(--color-blueteam);box-shadow:0 0 5px rgba(58,158,245,0.6); }
+.dot-live.yellow { background:var(--color-yellow);  box-shadow:0 0 5px rgba(239,200,74,0.6); }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
 /* ── Scan sweep line ── */
 @keyframes scan-sweep { 0%{top:0;opacity:.7} 100%{top:100%;opacity:0} }
@@ -85,7 +103,7 @@ body {
 .scan-line.blue { background:linear-gradient(90deg,transparent,var(--color-blueteam),transparent); }
 
 /* ── Terminal ── */
-.terminal { background:#040608; border:1px solid var(--color-border); font-family:var(--font-mono); font-size:12px; color:#c8d8e8; overflow-y:auto; }
+.terminal { background:#060c14; border:1px solid var(--color-border); font-family:var(--font-mono); font-size:12px; color:#a8bcd4; overflow-y:auto; }
 .terminal-success { color:var(--color-scanner); }
 .terminal-warn    { color:var(--color-hemis-orange); }
 .terminal-error   { color:var(--color-hemis); }
@@ -98,11 +116,11 @@ body {
 
 /* ── Category label tag ── */
 .label-tag { font-family:var(--font-mono); font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; padding:2px 7px; border:1px solid; }
-.sev-critical { color:var(--color-critical); border-color:var(--color-critical); background:rgba(255,61,61,0.09); }
-.sev-high     { color:var(--color-high);    border-color:var(--color-high);    background:rgba(255,124,61,0.09); }
-.sev-medium   { color:var(--color-medium);  border-color:var(--color-medium);  background:rgba(255,225,124,0.09); }
-.sev-low      { color:var(--color-low);     border-color:var(--color-low);     background:rgba(122,155,181,0.09); }
-.sev-info     { color:var(--color-blueteam);border-color:var(--color-blueteam);background:rgba(0,153,255,0.09); }
+.sev-critical { color:var(--color-critical); border-color:var(--color-critical); background:rgba(232,69,69,0.10); }
+.sev-high     { color:var(--color-high);    border-color:var(--color-high);    background:rgba(232,114,64,0.10); }
+.sev-medium   { color:var(--color-medium);  border-color:var(--color-medium);  background:rgba(239,200,74,0.10); }
+.sev-low      { color:var(--color-low);     border-color:var(--color-low);     background:rgba(106,138,170,0.10); }
+.sev-info     { color:var(--color-blueteam);border-color:var(--color-blueteam);background:rgba(58,158,245,0.10); }
 
 /* ── Animations ── */
 @keyframes fade-in-up { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
@@ -145,24 +163,24 @@ body {
   --color-bg-surface:     #ffffff;
   --color-bg-elevated:    #f4f7fb;
   --color-bg-hover:       #e6ecf5;
-  --color-border:         #c8d8e8;
-  --color-border-bright:  #9ab4cc;
+  --color-border:         #c4d4e6;
+  --color-border-bright:  #96b4cc;
   --color-border-focus:   #6890aa;
   --color-text-primary:   #0a1829;
   --color-text-secondary: #3a5570;
   --color-text-dim:       #8aaac0;
-  --color-yellow:         #b38000;
+  --color-yellow:         #a87800;
   --color-yellow-dim:     #fff7d6;
-  --color-scanner:        #008a52;
-  --color-scanner-dim:    #d4f5e8;
-  --color-hemis:          #cc1111;
+  --color-scanner:        #007a46;
+  --color-scanner-dim:    #d0f5e6;
+  --color-hemis:          #c01818;
   --color-hemis-dim:      #ffe0e0;
-  --color-hemis-orange:   #c04400;
-  --color-blueteam:       #005faa;
-  --color-blueteam-dim:   #d0eaff;
-  --color-critical:       #cc1111;
-  --color-high:           #c04400;
-  --color-medium:         #b38000;
+  --color-hemis-orange:   #b84000;
+  --color-blueteam:       #0060b0;
+  --color-blueteam-dim:   #d0e8ff;
+  --color-critical:       #c01818;
+  --color-high:           #b84000;
+  --color-medium:         #a87800;
   --color-low:            #5a7a90;
 }
 
