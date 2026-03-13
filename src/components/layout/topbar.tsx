@@ -1,6 +1,7 @@
 'use client'
 
 import { usePathname } from 'next/navigation'
+import { useTheme } from '@/components/layout/theme-provider'
 
 const PAGE_META: Record<string, { title: string; product: string; color: string; breadcrumb: string }> = {
   '/dashboard':           { title:'OVERVIEW',      product:'HemisX Console',  color:'var(--color-yellow)',   breadcrumb:'/ overview'      },
@@ -11,8 +12,8 @@ const PAGE_META: Record<string, { title: string; product: string; color: string;
 
 export default function Topbar() {
   const path = usePathname()
+  const { theme, toggle } = useTheme()
   const meta = PAGE_META[path] ?? PAGE_META['/dashboard']
-  const now  = new Date().toLocaleString('en-US', { hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit' })
 
   return (
     <header style={{
@@ -63,6 +64,33 @@ export default function Topbar() {
             3 CRITICAL
           </span>
         </div>
+
+        {/* Theme toggle */}
+        <button
+          onClick={toggle}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          style={{
+            background: 'var(--color-bg-elevated)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-text-secondary)',
+            width: 28, height: 28,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer',
+            fontSize: 13,
+            transition: 'all 0.15s',
+            flexShrink: 0,
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.borderColor = 'var(--color-border-bright)'
+            e.currentTarget.style.color = 'var(--color-text-primary)'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.borderColor = 'var(--color-border)'
+            e.currentTarget.style.color = 'var(--color-text-secondary)'
+          }}
+        >
+          {theme === 'dark' ? '☀' : '☾'}
+        </button>
 
         {/* Divider */}
         <div style={{ width:1, height:16, background:'var(--color-border)' }} />

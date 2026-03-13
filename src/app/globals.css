@@ -135,3 +135,57 @@ body {
 }
 .tac-input:focus { border-color: var(--color-border-focus); }
 .tac-input::placeholder { color: var(--color-text-dim); }
+
+/* ─────────────────────────────────────────────
+   LIGHT THEME OVERRIDES
+   Applied when <html data-theme="light">
+───────────────────────────────────────────── */
+[data-theme="light"] {
+  --color-bg-base:        #eef2f7;
+  --color-bg-surface:     #ffffff;
+  --color-bg-elevated:    #f4f7fb;
+  --color-bg-hover:       #e6ecf5;
+  --color-border:         #c8d8e8;
+  --color-border-bright:  #9ab4cc;
+  --color-border-focus:   #6890aa;
+  --color-text-primary:   #0a1829;
+  --color-text-secondary: #3a5570;
+  --color-text-dim:       #8aaac0;
+  --color-yellow:         #b38000;
+  --color-yellow-dim:     #fff7d6;
+  --color-scanner:        #008a52;
+  --color-scanner-dim:    #d4f5e8;
+  --color-hemis:          #cc1111;
+  --color-hemis-dim:      #ffe0e0;
+  --color-hemis-orange:   #c04400;
+  --color-blueteam:       #005faa;
+  --color-blueteam-dim:   #d0eaff;
+  --color-critical:       #cc1111;
+  --color-high:           #c04400;
+  --color-medium:         #b38000;
+  --color-low:            #5a7a90;
+}
+
+/* Grid dots flip to dark on light bg */
+[data-theme="light"] .tac-grid {
+  background-image:
+    linear-gradient(rgba(0,30,60,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,30,60,0.04) 1px, transparent 1px);
+}
+
+/* Terminal stays dark — always */
+[data-theme="light"] .terminal {
+  background: #0a0e14;
+  color: #c8d8e8;
+  border-color: #2a3d54;
+}
+
+/* Scan line glow adjustments for light bg */
+[data-theme="light"] .scan-line {
+  opacity: 0.6;
+}
+
+/* Scrollbar on light bg */
+[data-theme="light"] ::-webkit-scrollbar-track {
+  background: var(--color-bg-elevated);
+}
