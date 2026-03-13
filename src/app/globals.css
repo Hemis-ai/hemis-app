@@ -1,0 +1,137 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─────────────────────────────────────────────
+   HEMISX CONSOLE — Design Tokens
+───────────────────────────────────────────── */
+:root {
+  --color-bg-base:        #070a0d;
+  --color-bg-surface:     #0d1117;
+  --color-bg-elevated:    #141b24;
+  --color-bg-hover:       #1a2535;
+  --color-border:         #1c2a3a;
+  --color-border-bright:  #2a3d54;
+  --color-border-focus:   #3a5570;
+  --color-text-primary:   #dce8f5;
+  --color-text-secondary: #7a9bb5;
+  --color-text-dim:       #3a5570;
+  --color-yellow:         #ffe17c;
+  --color-yellow-dim:     #4a3a00;
+  --color-scanner:        #00e88a;
+  --color-scanner-dim:    #003d24;
+  --color-hemis:          #ff3d3d;
+  --color-hemis-dim:      #4a0000;
+  --color-hemis-orange:   #ff7c3d;
+  --color-blueteam:       #0099ff;
+  --color-blueteam-dim:   #00274d;
+  --color-critical:       #ff3d3d;
+  --color-high:           #ff7c3d;
+  --color-medium:         #ffe17c;
+  --color-low:            #7a9bb5;
+  --font-sans:   'Inter', system-ui, sans-serif;
+  --font-mono:   'JetBrains Mono', 'Fira Code', monospace;
+  --font-display:'Space Grotesk', 'Inter', sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { color-scheme: dark; }
+body {
+  background: var(--color-bg-base);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Tactical grid bg ── */
+.tac-grid {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* ── Bracket corner cards ── */
+.bracket-card {
+  position: relative;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+}
+.bracket-card::before, .bracket-card::after {
+  content: ''; position: absolute; width: 10px; height: 10px;
+}
+.bracket-card::before { top: -1px; left: -1px; border-top: 2px solid var(--color-yellow); border-left: 2px solid var(--color-yellow); }
+.bracket-card::after  { bottom: -1px; right: -1px; border-bottom: 2px solid var(--color-yellow); border-right: 2px solid var(--color-yellow); }
+.bracket-scanner::before, .bracket-scanner::after { border-color: var(--color-scanner); }
+.bracket-hemis::before,   .bracket-hemis::after   { border-color: var(--color-hemis); }
+.bracket-blueteam::before,.bracket-blueteam::after { border-color: var(--color-blueteam); }
+
+/* ── Pulsing status dot ── */
+.dot-live { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--color-scanner); box-shadow:0 0 6px var(--color-scanner); animation:pulse-dot 2s ease-in-out infinite; }
+.dot-live.red    { background:var(--color-hemis);   box-shadow:0 0 6px var(--color-hemis); }
+.dot-live.blue   { background:var(--color-blueteam);box-shadow:0 0 6px var(--color-blueteam); }
+.dot-live.yellow { background:var(--color-yellow);  box-shadow:0 0 6px var(--color-yellow); }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.25} }
+
+/* ── Scan sweep line ── */
+@keyframes scan-sweep { 0%{top:0;opacity:.7} 100%{top:100%;opacity:0} }
+.scan-line { position:absolute; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--color-scanner),transparent); animation:scan-sweep 2.2s linear infinite; pointer-events:none; }
+.scan-line.red  { background:linear-gradient(90deg,transparent,var(--color-hemis),transparent); }
+.scan-line.blue { background:linear-gradient(90deg,transparent,var(--color-blueteam),transparent); }
+
+/* ── Terminal ── */
+.terminal { background:#040608; border:1px solid var(--color-border); font-family:var(--font-mono); font-size:12px; color:#c8d8e8; overflow-y:auto; }
+.terminal-success { color:var(--color-scanner); }
+.terminal-warn    { color:var(--color-hemis-orange); }
+.terminal-error   { color:var(--color-hemis); }
+.terminal-dim     { color:var(--color-text-dim); }
+.terminal-accent  { color:var(--color-yellow); }
+
+/* ── Mono + display ── */
+.mono    { font-family:var(--font-mono); }
+.display { font-family:var(--font-display); }
+
+/* ── Category label tag ── */
+.label-tag { font-family:var(--font-mono); font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; padding:2px 7px; border:1px solid; }
+.sev-critical { color:var(--color-critical); border-color:var(--color-critical); background:rgba(255,61,61,0.09); }
+.sev-high     { color:var(--color-high);    border-color:var(--color-high);    background:rgba(255,124,61,0.09); }
+.sev-medium   { color:var(--color-medium);  border-color:var(--color-medium);  background:rgba(255,225,124,0.09); }
+.sev-low      { color:var(--color-low);     border-color:var(--color-low);     background:rgba(122,155,181,0.09); }
+.sev-info     { color:var(--color-blueteam);border-color:var(--color-blueteam);background:rgba(0,153,255,0.09); }
+
+/* ── Animations ── */
+@keyframes fade-in-up { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+.fade-in-up { animation:fade-in-up 0.3s ease forwards; }
+
+@keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+.shimmer { background:linear-gradient(90deg,var(--color-bg-surface) 25%,var(--color-bg-elevated) 50%,var(--color-bg-surface) 75%); background-size:200% 100%; animation:shimmer 1.5s infinite; }
+
+/* ── Progress bar ── */
+.tac-progress { height:3px; background:var(--color-border); position:relative; overflow:hidden; }
+.tac-progress-fill { height:100%; transition:width 0.4s ease; position:relative; }
+.tac-progress-fill::after { content:''; position:absolute; right:0;top:0;bottom:0; width:20px; background:linear-gradient(90deg,transparent,rgba(255,255,255,0.35)); }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:var(--color-bg-base)}
+::-webkit-scrollbar-thumb{background:var(--color-border-bright);border-radius:2px}
+
+/* ── Input base ── */
+.tac-input {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 8px 12px;
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+}
+.tac-input:focus { border-color: var(--color-border-focus); }
+.tac-input::placeholder { color: var(--color-text-dim); }

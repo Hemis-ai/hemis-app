@@ -1,0 +1,147 @@
+// HemisX Console — Prisma Schema
+// Database: PostgreSQL (RDS)
+// This schema is scaffolded for future production use.
+// The demo uses mock data from src/lib/mock-data/
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Auth ──────────────────────────────────────────────────────────────────
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  plan      Plan     @default(STARTER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+  scans     Scan[]
+  simulations Simulation[]
+  alerts    Alert[]
+  awsAccounts AwsAccount[]
+}
+
+model User {
+  id             String       @id @default(cuid())
+  email          String       @unique
+  name           String
+  role           UserRole     @default(MEMBER)
+  orgId          String
+  organization   Organization @relation(fields: [orgId], references: [id])
+  createdAt      DateTime     @default(now())
+  lastLoginAt    DateTime?
+}
+
+// ─── AWS Integration ───────────────────────────────────────────────────────
+model AwsAccount {
+  id           String       @id @default(cuid())
+  orgId        String
+  organization Organization @relation(fields: [orgId], references: [id])
+  accountId    String       // AWS Account ID
+  alias        String?
+  roleArn      String       // Cross-account IAM role ARN
+  regions      String[]     // Regions to scan
+  createdAt    DateTime     @default(now())
+  scans        Scan[]
+}
+
+// ─── Scanner ───────────────────────────────────────────────────────────────
+model Scan {
+  id               String       @id @default(cuid())
+  orgId            String
+  organization     Organization @relation(fields: [orgId], references: [id])
+  awsAccountId     String
+  awsAccount       AwsAccount   @relation(fields: [awsAccountId], references: [id])
+  status           ScanStatus   @default(PENDING)
+  riskScore        Int?
+  resourcesScanned Int          @default(0)
+  findingsCount    Int          @default(0)
+  soc2Score        Int?
+  iso27001Score    Int?
+  startedAt        DateTime     @default(now())
+  completedAt      DateTime?
+  findings         Finding[]
+}
+
+model Finding {
+  id          String        @id @default(cuid())
+  scanId      String
+  scan        Scan          @relation(fields: [scanId], references: [id])
+  severity    Severity
+  service     String
+  resource    String
+  title       String
+  description String        @db.Text
+  remediation String        @db.Text
+  compliance  String[]
+  riskScore   Int
+  status      FindingStatus @default(OPEN)
+  region      String
+  detectedAt  DateTime      @default(now())
+  resolvedAt  DateTime?
+}
+
+// ─── HEMIS ─────────────────────────────────────────────────────────────────
+model Simulation {
+  id           String       @id @default(cuid())
+  orgId        String
+  organization Organization @relation(fields: [orgId], references: [id])
+  prompt       String       @db.Text
+  status       SimStatus    @default(PENDING)
+  findingsCount Int         @default(0)
+  criticalCount Int         @default(0)
+  duration     String?
+  startedAt    DateTime     @default(now())
+  completedAt  DateTime?
+  steps        SimStep[]
+}
+
+model SimStep {
+  id           String     @id @default(cuid())
+  simulationId String
+  simulation   Simulation @relation(fields: [simulationId], references: [id])
+  seq          Int
+  phase        String
+  technique    String
+  techniqueId  String
+  target       String
+  result       StepResult
+  detail       String     @db.Text
+  timestamp    DateTime   @default(now())
+}
+
+// ─── Blue Team ─────────────────────────────────────────────────────────────
+model Alert {
+  id              String       @id @default(cuid())
+  orgId           String
+  organization    Organization @relation(fields: [orgId], references: [id])
+  severity        Severity
+  title           String
+  summary         String       @db.Text
+  source          String
+  resource        String
+  ipAddress       String?
+  region          String
+  status          AlertStatus  @default(NEW)
+  tactics         String[]
+  autoResponded   Boolean      @default(false)
+  responseActions String[]
+  detectedAt      DateTime     @default(now())
+  resolvedAt      DateTime?
+}
+
+// ─── Enums ─────────────────────────────────────────────────────────────────
+enum Plan        { STARTER PROFESSIONAL ENTERPRISE }
+enum UserRole    { OWNER ADMIN ANALYST MEMBER VIEWER }
+enum Severity    { CRITICAL HIGH MEDIUM LOW INFO }
+enum FindingStatus { OPEN REMEDIATED ACKNOWLEDGED IN_PROGRESS }
+enum AlertStatus { NEW INVESTIGATING CONTAINED RESOLVED }
+enum ScanStatus  { PENDING RUNNING COMPLETED FAILED }
+enum SimStatus   { PENDING RUNNING COMPLETED FAILED }
+enum StepResult  { SUCCESS FAILED PARTIAL }
