@@ -147,9 +147,143 @@ export default function Sidebar() {
       {/* Divider */}
       <div style={{ margin:'4px 16px', borderTop:'1px solid var(--color-border)' }} />
 
-      {/* Nav */}
-      <nav style={{ padding:'10px 12px', flex:1 }}>
-        <div className="mono" style={{ fontSize:11, letterSpacing:'0.15em', color:'var(--color-text-secondary)', textTransform:'uppercase', padding:'0 6px', marginBottom:8 }}>
+      {/* Contextual Tools — HEMIS */}
+      {activeProduct?.id === 'hemis' && (
+        <nav style={{ padding:'8px 12px' }}>
+          <div className="mono" style={{ fontSize:9, letterSpacing:'0.15em', color:'var(--color-hemis)', textTransform:'uppercase', padding:'0 6px', marginBottom:8 }}>
+            HEMIS Tools
+          </div>
+          {[
+            { href:'/dashboard/hemis', label:'ATTACK CONSOLE', icon:'◉' },
+            { href:'/dashboard/hemis/scanner', label:'VULN SCANNER', icon:'⬡' },
+            { href:'/dashboard/hemis/payloads', label:'PAYLOAD GEN', icon:'⚡' },
+            { href:'/dashboard/hemis/findings', label:'FINDINGS', icon:'◈' },
+            { href:'/dashboard/hemis/engagements', label:'ENGAGEMENTS', icon:'▣' },
+          ].map(item => {
+            const isActive = path === item.href
+            return (
+              <Link key={item.href} href={item.href} style={{ textDecoration:'none', display:'block', marginBottom:2 }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '7px 10px',
+                  background: isActive ? 'var(--color-hemis)10' : 'transparent',
+                  border: isActive ? '1px solid var(--color-hemis)33' : '1px solid transparent',
+                  transition: 'all 0.12s',
+                  borderRadius: 0,
+                  opacity: isActive ? 1 : 0.7,
+                }}>
+                  <span style={{ fontSize:11, color: isActive ? 'var(--color-hemis)' : 'var(--color-text-dim)', lineHeight:1, flexShrink:0 }}>
+                    {item.icon}
+                  </span>
+                  <span className="mono" style={{
+                    fontSize:9,
+                    fontWeight: 600,
+                    letterSpacing:'0.08em',
+                    textTransform:'uppercase',
+                    color: isActive ? 'var(--color-hemis)' : 'var(--color-text-secondary)',
+                  }}>
+                    {item.label}
+                  </span>
+                </div>
+              </Link>
+            )
+          })}
+        </nav>
+      )}
+
+      {/* Contextual Tools — SCANNER */}
+      {activeProduct?.id === 'scanner' && (
+        <nav style={{ padding:'8px 12px' }}>
+          <div className="mono" style={{ fontSize:9, letterSpacing:'0.15em', color:'var(--color-scanner)', textTransform:'uppercase', padding:'0 6px', marginBottom:8 }}>
+            Scanner Tools
+          </div>
+          {[
+            { href:'/dashboard/scanner', label:'CLOUD SCAN', icon:'◈' },
+            { href:'/dashboard/scanner', label:'COMPLIANCE', icon:'▤' },
+            { href:'/dashboard/scanner', label:'INVENTORY', icon:'◌' },
+          ].map(item => {
+            const isActive = path === item.href
+            return (
+              <Link key={item.label} href={item.href} style={{ textDecoration:'none', display:'block', marginBottom:2 }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '7px 10px',
+                  background: isActive ? 'var(--color-scanner)10' : 'transparent',
+                  border: isActive ? '1px solid var(--color-scanner)33' : '1px solid transparent',
+                  transition: 'all 0.12s',
+                  borderRadius: 0,
+                  opacity: isActive ? 1 : 0.7,
+                }}>
+                  <span style={{ fontSize:11, color: isActive ? 'var(--color-scanner)' : 'var(--color-text-dim)', lineHeight:1, flexShrink:0 }}>
+                    {item.icon}
+                  </span>
+                  <span className="mono" style={{
+                    fontSize:9,
+                    fontWeight: 600,
+                    letterSpacing:'0.08em',
+                    textTransform:'uppercase',
+                    color: isActive ? 'var(--color-scanner)' : 'var(--color-text-secondary)',
+                  }}>
+                    {item.label}
+                  </span>
+                </div>
+              </Link>
+            )
+          })}
+        </nav>
+      )}
+
+      {/* Contextual Tools — BLUETEAM */}
+      {activeProduct?.id === 'blueteam' && (
+        <nav style={{ padding:'8px 12px' }}>
+          <div className="mono" style={{ fontSize:9, letterSpacing:'0.15em', color:'var(--color-blueteam)', textTransform:'uppercase', padding:'0 6px', marginBottom:8 }}>
+            Detection Tools
+          </div>
+          {[
+            { href:'/dashboard/blueteam', label:'ALERTS', icon:'◎' },
+            { href:'/dashboard/blueteam', label:'DETECTION RULES', icon:'▦' },
+            { href:'/dashboard/blueteam', label:'PLAYBOOKS', icon:'◌' },
+          ].map(item => {
+            const isActive = path === item.href
+            return (
+              <Link key={item.label} href={item.href} style={{ textDecoration:'none', display:'block', marginBottom:2 }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '7px 10px',
+                  background: isActive ? 'var(--color-blueteam)10' : 'transparent',
+                  border: isActive ? '1px solid var(--color-blueteam)33' : '1px solid transparent',
+                  transition: 'all 0.12s',
+                  borderRadius: 0,
+                  opacity: isActive ? 1 : 0.7,
+                }}>
+                  <span style={{ fontSize:11, color: isActive ? 'var(--color-blueteam)' : 'var(--color-text-dim)', lineHeight:1, flexShrink:0 }}>
+                    {item.icon}
+                  </span>
+                  <span className="mono" style={{
+                    fontSize:9,
+                    fontWeight: 600,
+                    letterSpacing:'0.08em',
+                    textTransform:'uppercase',
+                    color: isActive ? 'var(--color-blueteam)' : 'var(--color-text-secondary)',
+                  }}>
+                    {item.label}
+                  </span>
+                </div>
+              </Link>
+            )
+          })}
+        </nav>
+      )}
+
+      {/* Main Nav */}
+      <nav style={{ padding:'8px 12px', flex:1 }}>
+        <div className="mono" style={{ fontSize:9, letterSpacing:'0.15em', color:'var(--color-text-dim)', textTransform:'uppercase', padding:'0 6px', marginBottom:8 }}>
           Navigation
         </div>
         {NAV_ITEMS.map(item => {

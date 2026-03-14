@@ -100,3 +100,51 @@ export interface HealthScore {
   coverage:   number
   mttr:       string        // Mean time to respond
 }
+
+// ─── Red Team ─────────────────────────────────────────────────────────────
+export interface Finding {
+  id:                 string
+  type:               string        // sql_injection, xss, command_injection, etc.
+  severity:           Severity
+  cvssScore:          number        // 0-10
+  affectedComponent:  string        // endpoint, service, or resource affected
+  description:        string
+  remediation:        string
+  proof_of_concept:   string
+  detectedAt:         string        // ISO timestamp
+  mitreId:            string        // T1190, etc.
+  status:             Status        // OPEN, ACKNOWLEDGED, REMEDIATED, IN_PROGRESS
+}
+
+export interface ScanJob {
+  id:           string
+  target:       string
+  scope:        string[]
+  engagementId: string
+  status:       'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
+  progress:     number        // 0-100
+  findings?:    Finding[]
+  startedAt:    string
+  completedAt?: string
+}
+
+export interface Payload {
+  id:           string
+  vulnType:     string
+  payload:      string
+  mitreId:      string
+  cvssScore:    number
+  remediation:  string
+  engagementId: string
+  generatedAt:  string
+}
+
+export interface ExecutionResult {
+  id:             string
+  engagementId:   string
+  targetUrl:      string
+  simulationType: string
+  status:         'RUNNING' | 'COMPLETED' | 'FAILED'
+  startedAt:      string
+  completedAt?:   string
+}
