@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p ${PORT:-7777}",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start -p 7777",
     "lint": "eslint",
     "db:generate": "prisma generate",
