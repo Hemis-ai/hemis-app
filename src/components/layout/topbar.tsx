@@ -14,11 +14,12 @@ const PAGE_META: Record<string, { title: string; product: string; color: string;
 
 const PRODUCT_TOOLS = {
   hemis: [
-    { href:'/dashboard/hemis', label:'ATTACK CONSOLE', icon:'◉' },
-    { href:'/dashboard/hemis/scanner', label:'VULN SCANNER', icon:'⬡' },
-    { href:'/dashboard/hemis/payloads', label:'PAYLOAD GEN', icon:'⚡' },
-    { href:'/dashboard/hemis/findings', label:'FINDINGS', icon:'◈' },
-    { href:'/dashboard/hemis/engagements', label:'ENGAGEMENTS', icon:'▣' },
+    { href:'/dashboard/hemis', label:'SAST', icon:'⬡' },
+    { href:'/dashboard/hemis/scanner', label:'DAST', icon:'◈' },
+    { href:'/dashboard/hemis/payloads', label:'WHITE BOX RED TEAMING', icon:'◉' },
+    { href:'/dashboard/hemis/findings', label:'BLACK BOX RED TEAMING', icon:'◌' },
+    { href:'/dashboard/hemis/engagements', label:'FINDINGS ENGINE', icon:'▦' },
+    { href:'/dashboard/hemis/reports', label:'REPORT GENERATOR', icon:'▤' },
   ],
   scanner: [
     { href:'/dashboard/scanner', label:'CLOUD SCAN', icon:'◈' },
