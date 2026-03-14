@@ -93,7 +93,7 @@ const MOCK_FINDINGS: Finding[] = [
     proof_of_concept: 'Rainbow table attack on extracted password hashes',
     detectedAt: '2026-03-14T10:10:00Z',
     mitreId: 'T1110',
-    status: 'IN_PROGRESS',
+    status: 'ACKNOWLEDGED',
   },
 ]
 
@@ -128,7 +128,6 @@ function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
     OPEN: 'var(--color-hemis)',
     ACKNOWLEDGED: 'var(--color-hemis-orange)',
-    IN_PROGRESS: 'var(--color-yellow)',
     REMEDIATED: 'var(--color-scanner)',
   }
   const color = colors[status] || 'var(--color-text-dim)'

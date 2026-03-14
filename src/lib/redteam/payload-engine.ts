@@ -205,7 +205,7 @@ sudo -l  # Check sudo permissions`,
 export function isAuthorizedEngagement(engagementId: string): boolean {
   // Mock implementation: check that engagement ID is non-empty
   // In production, this would query the database for authorization record
-  return engagementId && engagementId.trim().length > 0
+  return !!(engagementId && engagementId.trim().length > 0)
 }
 
 /**

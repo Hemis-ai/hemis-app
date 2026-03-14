@@ -129,7 +129,7 @@ export async function mockScan(target: string, scope: string[]): Promise<Finding
   }
 
   return findings.sort((a, b) => {
-    const severityOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
+    const severityOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4 }
     return severityOrder[a.severity] - severityOrder[b.severity]
   })
 }

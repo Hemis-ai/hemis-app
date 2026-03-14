@@ -73,20 +73,6 @@ const MOCK_FINDINGS: Finding[] = [
   },
 ]
 
-interface Finding {
-  id: string
-  type: string
-  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
-  cvssScore: number
-  affectedComponent: string
-  description: string
-  remediation: string
-  proof_of_concept: string
-  detectedAt: string
-  mitreId: string
-  status: 'OPEN' | 'ACKNOWLEDGED' | 'REMEDIATED'
-}
-
 function SeverityBadge({ severity }: { severity: string }) {
   const colors: Record<string, { bg: string; color: string }> = {
     CRITICAL: { bg: 'var(--color-hemis)22', color: 'var(--color-hemis)' },

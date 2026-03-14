@@ -106,7 +106,7 @@ const MOCK_FINDINGS: Finding[] = [
     proof_of_concept: 'Rainbow table attack on extracted password hashes',
     detectedAt: '2026-03-14T10:05:00Z',
     mitreId: 'T1110',
-    status: 'IN_PROGRESS',
+    status: 'ACKNOWLEDGED',
   },
   {
     id: 'find_008',

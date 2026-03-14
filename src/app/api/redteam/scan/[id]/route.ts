@@ -20,10 +20,12 @@ const scanCache = new Map<string, { status: string; findings: Finding[]; progres
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse<ScanStatusResponse>> {
+  const { id } = await params
+  const scanId = id
+
   try {
-    const scanId = params.id
 
     // Validate scan ID format
     if (!scanId || !scanId.startsWith('scan_')) {
@@ -67,7 +69,7 @@ export async function GET(
     console.error('[REDTEAM] Scan poll error:', error)
     return NextResponse.json(
       {
-        scanId: params.id,
+        scanId,
         status: 'FAILED',
         progress: 0,
         error: 'Internal server error',

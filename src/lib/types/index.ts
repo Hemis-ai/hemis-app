@@ -1,6 +1,6 @@
 // ─── Shared ───────────────────────────────────────────────────────────────
 export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO'
-export type Status   = 'OPEN' | 'REMEDIATED' | 'ACKNOWLEDGED' | 'IN_PROGRESS'
+export type Status   = 'OPEN' | 'REMEDIATED' | 'ACKNOWLEDGED'
 
 // ─── Scanner ──────────────────────────────────────────────────────────────
 export interface ScanFinding {
@@ -113,7 +113,7 @@ export interface Finding {
   proof_of_concept:   string
   detectedAt:         string        // ISO timestamp
   mitreId:            string        // T1190, etc.
-  status:             Status        // OPEN, ACKNOWLEDGED, REMEDIATED, IN_PROGRESS
+  status:             Status        // OPEN, ACKNOWLEDGED, REMEDIATED
 }
 
 export interface ScanJob {
