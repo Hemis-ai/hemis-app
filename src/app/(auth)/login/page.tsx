@@ -17,9 +17,31 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
     setScanLine(true)
-    // Simulate auth delay
-    await new Promise(r => setTimeout(r, 1400))
-    router.push('/dashboard')
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ email, password }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setError(data.error ?? 'AUTHENTICATION FAILED')
+        setLoading(false)
+        setScanLine(false)
+        return
+      }
+
+      // Brief pause so the scan animation completes visually
+      await new Promise(r => setTimeout(r, 600))
+      router.push('/dashboard')
+    } catch {
+      setError('NETWORK ERROR — RETRY')
+      setLoading(false)
+      setScanLine(false)
+    }
   }
 
   return (
@@ -77,6 +99,7 @@ export default function LoginPage() {
                 className="tac-input"
                 style={{ display:'block' }}
                 autoComplete="email"
+                disabled={loading}
               />
             </div>
 
@@ -93,6 +116,7 @@ export default function LoginPage() {
                 className="tac-input"
                 style={{ display:'block' }}
                 autoComplete="current-password"
+                disabled={loading}
               />
             </div>
 
@@ -141,8 +165,10 @@ export default function LoginPage() {
 
           {/* Demo hint */}
           <div className="mono" style={{ fontSize:12, color:'var(--color-text-secondary)', textAlign:'center', lineHeight:1.8 }}>
-            Demo mode — any credentials will work<br/>
-          <span style={{ color:'var(--color-text-primary)' }}>demo@hemisx.com</span>
+            Demo mode — use any credentials or<br/>
+            <span style={{ color:'var(--color-text-primary)' }}>demo@hemisx.com</span>
+            {' / '}
+            <span style={{ color:'var(--color-text-primary)' }}>demo1234</span>
           </div>
         </div>
 

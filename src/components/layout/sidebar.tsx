@@ -34,6 +34,16 @@ const PRODUCTS = [
     icon: '◎',
     desc: 'Threat Detection & Response',
   },
+  {
+    id: 'sast',
+    label: 'SAST',
+    short: 'SAT',
+    href: '/dashboard/sast',
+    color: 'var(--color-sast)',
+    dimColor: 'var(--color-sast-dim)',
+    icon: '◧',
+    desc: 'Static Code Analysis',
+  },
 ]
 
 const NAV_ITEMS = [

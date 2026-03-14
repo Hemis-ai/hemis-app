@@ -32,10 +32,18 @@
   --color-hemis-orange:   #ec8450;
   --color-blueteam:       #5ab0ff;
   --color-blueteam-dim:   #001a38;
+  --color-sast:           #a78bfa;
+  --color-sast-dim:       #1a0e38;
   --color-critical:       #ef5a5a;
   --color-high:           #ec8450;
   --color-medium:         #f2d156;
   --color-low:            #8ba8c8;
+  /* Severity aliases used in SAST UI */
+  --color-sev-critical:   #ef5a5a;
+  --color-sev-high:       #ec8450;
+  --color-sev-medium:     #f2d156;
+  --color-sev-low:        #5ab0ff;
+  --color-sev-info:       #8ba8c8;
 }
 
 /* ── DARK THEME (default) — high-contrast text, everything readable ── */
@@ -60,10 +68,17 @@
   --color-hemis-orange:   #ec8450;
   --color-blueteam:       #5ab0ff;
   --color-blueteam-dim:   #001a38;
+  --color-sast:           #a78bfa;
+  --color-sast-dim:       #1a0e38;
   --color-critical:       #ef5a5a;
   --color-high:           #ec8450;
   --color-medium:         #f2d156;
   --color-low:            #8ba8c8;
+  --color-sev-critical:   #ef5a5a;
+  --color-sev-high:       #ec8450;
+  --color-sev-medium:     #f2d156;
+  --color-sev-low:        #5ab0ff;
+  --color-sev-info:       #8ba8c8;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
