@@ -33,32 +33,32 @@ export default function LoginPage() {
         background: 'radial-gradient(ellipse 800px 500px at 50% 40%, rgba(255,225,124,0.04) 0%, transparent 70%)',
       }} />
 
-      <div style={{ width: '100%', maxWidth: 420, padding: '0 20px' }}>
+      <div style={{ width: '100%', maxWidth: 460, padding: '0 24px' }}>
 
         {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: 40 }}>
+        <div style={{ textAlign: 'center', marginBottom: 48 }}>
           <div style={{ display:'inline-flex', alignItems:'center', gap:10, marginBottom:8 }}>
-            <span style={{ fontSize:28 }}>⚡</span>
-            <span className="display" style={{ fontSize:22, fontWeight:700, color:'var(--color-text-primary)', letterSpacing:'-0.02em' }}>
+            <span style={{ fontSize:30 }}>⚡</span>
+            <span className="display" style={{ fontSize:24, fontWeight:700, color:'var(--color-text-primary)', letterSpacing:'-0.03em' }}>
               HemisX
             </span>
           </div>
-          <div className="mono" style={{ fontSize:10, letterSpacing:'0.2em', color:'var(--color-text-dim)', textTransform:'uppercase' }}>
+          <div className="mono" style={{ fontSize:11, letterSpacing:'0.18em', color:'var(--color-text-secondary)', textTransform:'uppercase' }}>
             Security Console · console.hemisx.com
           </div>
         </div>
 
         {/* Card */}
-        <div className="bracket-card" style={{ padding: '32px 28px', position:'relative', overflow:'hidden' }}>
+        <div className="bracket-card" style={{ padding: '36px 30px', position:'relative', overflow:'hidden' }}>
           {/* Scan line animation during auth */}
           {scanLine && <div className="scan-line" style={{ animationDuration:'1.2s' }} />}
 
           {/* Header */}
-          <div style={{ marginBottom:28 }}>
-            <div className="mono" style={{ fontSize:10, letterSpacing:'0.15em', color:'var(--color-yellow)', textTransform:'uppercase', marginBottom:6 }}>
+          <div style={{ marginBottom:30 }}>
+            <div className="mono" style={{ fontSize:11, letterSpacing:'0.16em', color:'var(--color-yellow)', textTransform:'uppercase', marginBottom:8 }}>
               [ AUTHENTICATE ]
             </div>
-            <h1 className="display" style={{ fontSize:20, fontWeight:700, color:'var(--color-text-primary)', margin:0 }}>
+            <h1 className="display" style={{ fontSize:22, fontWeight:700, color:'var(--color-text-primary)', margin:0 }}>
               Sign in to your workspace
             </h1>
           </div>
@@ -66,7 +66,7 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} style={{ display:'flex', flexDirection:'column', gap:16 }}>
             {/* Email */}
             <div>
-              <label className="mono" style={{ display:'block', fontSize:10, letterSpacing:'0.12em', color:'var(--color-text-secondary)', textTransform:'uppercase', marginBottom:6 }}>
+              <label className="mono" style={{ display:'block', fontSize:11, letterSpacing:'0.12em', color:'var(--color-text-secondary)', textTransform:'uppercase', marginBottom:6 }}>
                 Email Address
               </label>
               <input
@@ -82,7 +82,7 @@ export default function LoginPage() {
 
             {/* Password */}
             <div>
-              <label className="mono" style={{ display:'block', fontSize:10, letterSpacing:'0.12em', color:'var(--color-text-secondary)', textTransform:'uppercase', marginBottom:6 }}>
+              <label className="mono" style={{ display:'block', fontSize:11, letterSpacing:'0.12em', color:'var(--color-text-secondary)', textTransform:'uppercase', marginBottom:6 }}>
                 Password
               </label>
               <input
@@ -98,7 +98,7 @@ export default function LoginPage() {
 
             {/* Error */}
             {error && (
-              <div className="mono" style={{ fontSize:11, color:'var(--color-hemis)', letterSpacing:'0.08em' }}>
+              <div className="mono" style={{ fontSize:12, color:'var(--color-hemis)', letterSpacing:'0.08em' }}>
                 ✕ {error}
               </div>
             )}
@@ -112,11 +112,11 @@ export default function LoginPage() {
                 background: loading ? 'var(--color-bg-elevated)' : 'var(--color-yellow)',
                 color: loading ? 'var(--color-text-dim)' : '#0a0d0f',
                 border: 'none',
-                padding: '12px 0',
+                padding: '13px 0',
                 width: '100%',
                 cursor: loading ? 'not-allowed' : 'pointer',
                 fontFamily: 'var(--font-mono)',
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: 600,
                 letterSpacing: '0.12em',
                 textTransform: 'uppercase',
@@ -137,17 +137,17 @@ export default function LoginPage() {
           </form>
 
           {/* Divider */}
-          <div style={{ margin:'24px 0', borderTop:'1px solid var(--color-border)' }} />
+          <div style={{ margin:'26px 0', borderTop:'1px solid var(--color-border)' }} />
 
           {/* Demo hint */}
-          <div className="mono" style={{ fontSize:11, color:'var(--color-text-dim)', textAlign:'center', lineHeight:1.8 }}>
+          <div className="mono" style={{ fontSize:12, color:'var(--color-text-secondary)', textAlign:'center', lineHeight:1.8 }}>
             Demo mode — any credentials will work<br/>
-            <span style={{ color:'var(--color-text-secondary)' }}>demo@hemisx.com</span>
+          <span style={{ color:'var(--color-text-primary)' }}>demo@hemisx.com</span>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="mono" style={{ textAlign:'center', marginTop:24, fontSize:10, color:'var(--color-text-dim)', letterSpacing:'0.1em' }}>
+        <div className="mono" style={{ textAlign:'center', marginTop:28, fontSize:12, color:'var(--color-text-secondary)', letterSpacing:'0.1em' }}>
           © 2026 HemisX · console.hemisx.com · TLS 1.3 ENCRYPTED
         </div>
       </div>

@@ -49,8 +49,8 @@ export default function Sidebar() {
 
   return (
     <aside style={{
-      width: 220,
-      minWidth: 220,
+      width: 236,
+      minWidth: 236,
       background: 'var(--color-bg-surface)',
       borderRight: '1px solid var(--color-border)',
       display: 'flex',
@@ -63,30 +63,30 @@ export default function Sidebar() {
 
       {/* Logo */}
       <div style={{
-        padding: '20px 18px 16px',
+        padding: '22px 18px 18px',
         borderBottom: '1px solid var(--color-border)',
       }}>
         <Link href="/dashboard" style={{ textDecoration:'none', display:'flex', alignItems:'center', gap:8 }}>
-          <span style={{ fontSize:18 }}>⚡</span>
-          <span className="display" style={{ fontSize:15, fontWeight:700, color:'var(--color-text-primary)', letterSpacing:'-0.01em' }}>
+          <span style={{ fontSize:20 }}>⚡</span>
+          <span className="display" style={{ fontSize:16, fontWeight:700, color:'var(--color-text-primary)', letterSpacing:'-0.02em' }}>
             HemisX
           </span>
-          <span className="mono" style={{ fontSize:9, color:'var(--color-text-dim)', letterSpacing:'0.1em', marginLeft:2 }}>
+          <span className="mono" style={{ fontSize:10, color:'var(--color-text-secondary)', letterSpacing:'0.12em', marginLeft:2 }}>
             CONSOLE
           </span>
         </Link>
         {/* Uptime indicator */}
         <div style={{ marginTop:10, display:'flex', alignItems:'center', gap:6 }}>
           <span className="dot-live" style={{ width:5, height:5 }} />
-          <span className="mono" style={{ fontSize:9, color:'var(--color-text-dim)', letterSpacing:'0.08em' }}>
+          <span className="mono" style={{ fontSize:11, color:'var(--color-text-secondary)', letterSpacing:'0.08em' }}>
             ALL SYSTEMS OPERATIONAL
           </span>
         </div>
       </div>
 
       {/* Products */}
-      <div style={{ padding:'16px 12px 8px' }}>
-        <div className="mono" style={{ fontSize:9, letterSpacing:'0.15em', color:'var(--color-text-dim)', textTransform:'uppercase', padding:'0 6px', marginBottom:8 }}>
+      <div style={{ padding:'18px 12px 10px' }}>
+        <div className="mono" style={{ fontSize:11, letterSpacing:'0.15em', color:'var(--color-text-secondary)', textTransform:'uppercase', padding:'0 6px', marginBottom:8 }}>
           Products
         </div>
         {PRODUCTS.map(p => {
@@ -117,7 +117,7 @@ export default function Sidebar() {
                 </span>
                 <div style={{ minWidth:0, flex:1 }}>
                   <div className="mono" style={{
-                    fontSize:10, fontWeight:600,
+                    fontSize:11, fontWeight:600,
                     letterSpacing:'0.1em',
                     color: isActive ? p.color : 'var(--color-text-secondary)',
                     textTransform:'uppercase',
@@ -125,8 +125,8 @@ export default function Sidebar() {
                     {p.label}
                   </div>
                   <div style={{
-                    fontSize:10,
-                    color: isActive ? 'var(--color-text-secondary)' : 'var(--color-text-dim)',
+                    fontSize:12,
+                    color: isActive ? 'var(--color-text-secondary)' : 'var(--color-text-secondary)',
                     marginTop:1,
                   }}>
                     {p.desc}
@@ -148,8 +148,8 @@ export default function Sidebar() {
       <div style={{ margin:'4px 16px', borderTop:'1px solid var(--color-border)' }} />
 
       {/* Nav */}
-      <nav style={{ padding:'8px 12px', flex:1 }}>
-        <div className="mono" style={{ fontSize:9, letterSpacing:'0.15em', color:'var(--color-text-dim)', textTransform:'uppercase', padding:'0 6px', marginBottom:8 }}>
+      <nav style={{ padding:'10px 12px', flex:1 }}>
+        <div className="mono" style={{ fontSize:11, letterSpacing:'0.15em', color:'var(--color-text-secondary)', textTransform:'uppercase', padding:'0 6px', marginBottom:8 }}>
           Navigation
         </div>
         {NAV_ITEMS.map(item => {
@@ -169,7 +169,7 @@ export default function Sidebar() {
                   {item.icon}
                 </span>
                 <span className="mono" style={{
-                  fontSize:10,
+                  fontSize:11,
                   fontWeight: 600,
                   letterSpacing:'0.1em',
                   textTransform:'uppercase',
@@ -185,31 +185,31 @@ export default function Sidebar() {
 
       {/* Bottom — user */}
       <div style={{
-        padding:'12px 18px',
+        padding:'14px 18px',
         borderTop:'1px solid var(--color-border)',
         display:'flex',
         alignItems:'center',
         gap:10,
       }}>
         <div style={{
-          width:28, height:28, borderRadius:'50%',
+          width:30, height:30, borderRadius:'50%',
           background:'var(--color-yellow-dim)',
           border:'1px solid var(--color-yellow)',
           display:'flex', alignItems:'center', justifyContent:'center',
           flexShrink:0,
         }}>
-          <span style={{ fontSize:11, color:'var(--color-yellow)', fontWeight:700 }}>A</span>
+          <span style={{ fontSize:12, color:'var(--color-yellow)', fontWeight:700 }}>A</span>
         </div>
         <div style={{ minWidth:0, flex:1 }}>
-          <div style={{ fontSize:12, fontWeight:500, color:'var(--color-text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+          <div style={{ fontSize:13, fontWeight:500, color:'var(--color-text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
             Alex M.
           </div>
-          <div className="mono" style={{ fontSize:9, color:'var(--color-text-dim)', letterSpacing:'0.06em' }}>
+          <div className="mono" style={{ fontSize:11, color:'var(--color-text-secondary)', letterSpacing:'0.06em' }}>
             Security Engineer
           </div>
         </div>
         <Link href="/login" style={{ textDecoration:'none' }}>
-          <span className="mono" style={{ fontSize:9, color:'var(--color-text-dim)', letterSpacing:'0.08em', cursor:'pointer' }}>
+          <span className="mono" style={{ fontSize:11, color:'var(--color-text-secondary)', letterSpacing:'0.08em', cursor:'pointer' }}>
             ⎋
           </span>
         </Link>

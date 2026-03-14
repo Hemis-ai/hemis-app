@@ -6,52 +6,64 @@
 
 /* ─────────────────────────────────────────────
    HEMISX CONSOLE — Design Tokens
-   Dark mode palette: blue-tinted navy base,
-   muted accents, balanced contrast for long sessions
+   :root = fallback (dark). Explicit dark/light below.
 ───────────────────────────────────────────── */
 :root {
-  /* Backgrounds — layered blue-navy with clear step differences */
-  --color-bg-base:        #080d14;
-  --color-bg-surface:     #0e1624;
-  --color-bg-elevated:    #162030;
-  --color-bg-hover:       #1c2d40;
-
-  /* Borders — visible but not harsh */
-  --color-border:         #1e2f46;
-  --color-border-bright:  #2c4464;
-  --color-border-focus:   #3d5c82;
-
-  /* Text — warm blue-grey scale, primary is soft not pure white */
-  --color-text-primary:   #c4d4e8;
-  --color-text-secondary: #6a8aaa;
-  --color-text-dim:       #3a526a;
-
-  /* Brand yellow — slightly warmer, less saturated */
-  --color-yellow:         #efc84a;
-  --color-yellow-dim:     #2a1e00;
-
-  /* Scanner / emerald — softer green, not neon */
-  --color-scanner:        #00b870;
-  --color-scanner-dim:    #002818;
-
-  /* HEMIS / red — muted crimson, readable without burning */
-  --color-hemis:          #e84545;
-  --color-hemis-dim:      #280a0a;
-  --color-hemis-orange:   #e87240;
-
-  /* Blue Team — less saturated blue */
-  --color-blueteam:       #3a9ef5;
-  --color-blueteam-dim:   #001630;
-
-  /* Severity — aligned to accents */
-  --color-critical:       #e84545;
-  --color-high:           #e87240;
-  --color-medium:         #efc84a;
-  --color-low:            #6a8aaa;
-
   --font-sans:   'Inter', system-ui, sans-serif;
   --font-mono:   'JetBrains Mono', 'Fira Code', monospace;
   --font-display:'Space Grotesk', 'Inter', sans-serif;
+  /* Fallback dark values (same as [data-theme="dark"]) */
+  --color-bg-base:        #0a111c;
+  --color-bg-surface:     #121d2e;
+  --color-bg-elevated:    #1a283c;
+  --color-bg-hover:       #223348;
+  --color-border:         #2a3d52;
+  --color-border-bright:  #3d5670;
+  --color-border-focus:   #4d6d8e;
+  --color-text-primary:   #f0f4fa;
+  --color-text-secondary: #b2cce4;
+  --color-text-dim:       #8ba8c8;
+  --color-yellow:         #f2d156;
+  --color-yellow-dim:     #2e2200;
+  --color-scanner:        #00c078;
+  --color-scanner-dim:    #002c1c;
+  --color-hemis:          #ef5a5a;
+  --color-hemis-dim:      #2e0c0c;
+  --color-hemis-orange:   #ec8450;
+  --color-blueteam:       #5ab0ff;
+  --color-blueteam-dim:   #001a38;
+  --color-critical:       #ef5a5a;
+  --color-high:           #ec8450;
+  --color-medium:         #f2d156;
+  --color-low:            #8ba8c8;
+}
+
+/* ── DARK THEME (default) — high-contrast text, everything readable ── */
+[data-theme="dark"] {
+  --color-bg-base:        #0a111c;
+  --color-bg-surface:     #121d2e;
+  --color-bg-elevated:    #1a283c;
+  --color-bg-hover:       #223348;
+  --color-border:         #2a3d52;
+  --color-border-bright:  #3d5670;
+  --color-border-focus:   #4d6d8e;
+  /* Brighter text so all labels and body copy are clearly visible */
+  --color-text-primary:   #f0f4fa;
+  --color-text-secondary: #b2cce4;
+  --color-text-dim:       #8ba8c8;
+  --color-yellow:         #f2d156;
+  --color-yellow-dim:     #2e2200;
+  --color-scanner:        #00c078;
+  --color-scanner-dim:    #002c1c;
+  --color-hemis:          #ef5a5a;
+  --color-hemis-dim:      #2e0c0c;
+  --color-hemis-orange:   #ec8450;
+  --color-blueteam:       #5ab0ff;
+  --color-blueteam-dim:   #001a38;
+  --color-critical:       #ef5a5a;
+  --color-high:           #ec8450;
+  --color-medium:         #f2d156;
+  --color-low:            #8ba8c8;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -60,8 +72,8 @@ body {
   background: var(--color-bg-base);
   color: var(--color-text-primary);
   font-family: var(--font-sans);
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: 15px;
+  line-height: 1.7;
   margin: 0;
   -webkit-font-smoothing: antialiased;
 }
@@ -74,11 +86,21 @@ body {
   background-size: 32px 32px;
 }
 
+[data-theme="dark"] .tac-grid {
+  background-image:
+    linear-gradient(rgba(100,160,240,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(100,160,240,0.06) 1px, transparent 1px);
+}
+
 /* ── Bracket corner cards ── */
 .bracket-card {
   position: relative;
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border);
+}
+
+[data-theme="dark"] .bracket-card {
+  box-shadow: 0 1px 0 0 rgba(255,255,255,0.03);
 }
 .bracket-card::before, .bracket-card::after {
   content: ''; position: absolute; width: 10px; height: 10px;
@@ -103,7 +125,7 @@ body {
 .scan-line.blue { background:linear-gradient(90deg,transparent,var(--color-blueteam),transparent); }
 
 /* ── Terminal ── */
-.terminal { background:#060c14; border:1px solid var(--color-border); font-family:var(--font-mono); font-size:12px; color:#a8bcd4; overflow-y:auto; }
+.terminal { background:#0c1420; border:1px solid var(--color-border); font-family:var(--font-mono); font-size:13px; color:var(--color-text-secondary); overflow-y:auto; }
 .terminal-success { color:var(--color-scanner); }
 .terminal-warn    { color:var(--color-hemis-orange); }
 .terminal-error   { color:var(--color-hemis); }
@@ -115,7 +137,7 @@ body {
 .display { font-family:var(--font-display); }
 
 /* ── Category label tag ── */
-.label-tag { font-family:var(--font-mono); font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; padding:2px 7px; border:1px solid; }
+.label-tag { font-family:var(--font-mono); font-size:11px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; padding:3px 8px; border:1px solid; }
 .sev-critical { color:var(--color-critical); border-color:var(--color-critical); background:rgba(232,69,69,0.10); }
 .sev-high     { color:var(--color-high);    border-color:var(--color-high);    background:rgba(232,114,64,0.10); }
 .sev-medium   { color:var(--color-medium);  border-color:var(--color-medium);  background:rgba(239,200,74,0.10); }
@@ -135,9 +157,17 @@ body {
 .tac-progress-fill::after { content:''; position:absolute; right:0;top:0;bottom:0; width:20px; background:linear-gradient(90deg,transparent,rgba(255,255,255,0.35)); }
 
 /* ── Scrollbar ── */
-::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:var(--color-bg-base)}
-::-webkit-scrollbar-thumb{background:var(--color-border-bright);border-radius:2px}
+::-webkit-scrollbar-thumb{background:var(--color-border-bright);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--color-border-focus)}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #3d5670;
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #4d6d8e;
+}
 
 /* ── Input base ── */
 .tac-input {
@@ -153,6 +183,14 @@ body {
 }
 .tac-input:focus { border-color: var(--color-border-focus); }
 .tac-input::placeholder { color: var(--color-text-dim); }
+
+[data-theme="dark"] .tac-input {
+  background: #151f32;
+}
+[data-theme="dark"] .tac-input:focus {
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 1px var(--color-border-focus);
+}
 
 /* ─────────────────────────────────────────────
    LIGHT THEME OVERRIDES

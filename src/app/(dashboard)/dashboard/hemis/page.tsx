@@ -57,8 +57,8 @@ function LogLine({ text, type }: { text: string; type: string }) {
 
   return (
     <div style={{ display:'flex', gap:8, marginBottom:4 }}>
-      <span style={{ color:'var(--color-text-dim)', flexShrink:0 }}>›</span>
-      <span style={{ color, fontFamily:'var(--font-mono)', fontSize:11, lineHeight:1.5 }}>{text}</span>
+      <span style={{ color:'var(--color-text-secondary)', flexShrink:0 }}>›</span>
+      <span style={{ color, fontFamily:'var(--font-mono)', fontSize:12, lineHeight:1.5 }}>{text}</span>
     </div>
   )
 }
@@ -117,13 +117,13 @@ export default function HemisPage() {
       }}>
         {/* Header */}
         <div style={{ padding:'18px 18px 14px', borderBottom:'1px solid var(--color-border)' }}>
-          <div className="mono" style={{ fontSize:10, letterSpacing:'0.15em', color:'var(--color-hemis)', textTransform:'uppercase', marginBottom:4 }}>
+          <div className="mono" style={{ fontSize:11, letterSpacing:'0.15em', color:'var(--color-hemis)', textTransform:'uppercase', marginBottom:4 }}>
             [ HEMIS v2.4 · AI RED TEAM ENGINE ]
           </div>
-          <h2 className="display" style={{ fontSize:16, fontWeight:700, color:'var(--color-text-primary)', margin:0 }}>
+          <h2 className="display" style={{ fontSize:18, fontWeight:700, color:'var(--color-text-primary)', margin:0 }}>
             Attack Console
           </h2>
-          <p style={{ fontSize:11, color:'var(--color-text-dim)', margin:'3px 0 0' }}>
+          <p style={{ fontSize:12, color:'var(--color-text-secondary)', margin:'3px 0 0' }}>
             Describe an attack scenario in natural language
           </p>
         </div>
@@ -158,7 +158,7 @@ export default function HemisPage() {
           {simPhase === 'running' && (
             <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:8 }}>
               <span className="dot-live red" />
-              <span className="mono" style={{ fontSize:10, color:'var(--color-hemis)', letterSpacing:'0.1em' }}>
+              <span className="mono" style={{ fontSize:11, color:'var(--color-hemis)', letterSpacing:'0.1em' }}>
                 EXECUTING SIMULATION...
               </span>
             </div>
@@ -175,7 +175,7 @@ export default function HemisPage() {
 
         {/* Quick templates */}
         <div style={{ padding:'10px 14px', borderTop:'1px solid var(--color-border)' }}>
-          <div className="mono" style={{ fontSize:8, letterSpacing:'0.12em', color:'var(--color-text-dim)', textTransform:'uppercase', marginBottom:6 }}>
+          <div className="mono" style={{ fontSize:10, letterSpacing:'0.12em', color:'var(--color-text-secondary)', textTransform:'uppercase', marginBottom:6 }}>
             QUICK TEMPLATES
           </div>
           <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
@@ -197,7 +197,7 @@ export default function HemisPage() {
 
         {/* Input area */}
         <div style={{ padding:'12px 14px 14px', borderTop:'1px solid var(--color-border)' }}>
-          <div className="mono" style={{ fontSize:8, letterSpacing:'0.12em', color:'var(--color-text-dim)', textTransform:'uppercase', marginBottom:6 }}>
+          <div className="mono" style={{ fontSize:10, letterSpacing:'0.12em', color:'var(--color-text-secondary)', textTransform:'uppercase', marginBottom:6 }}>
             ATTACK SCENARIO
           </div>
           <textarea
@@ -214,7 +214,7 @@ export default function HemisPage() {
             style={{
               marginTop:8, width:'100%',
               background: simPhase==='running' ? 'var(--color-bg-elevated)' : 'var(--color-hemis)',
-              color: simPhase==='running' ? 'var(--color-text-dim)' : '#ffffff',
+              color: simPhase==='running' ? 'var(--color-text-secondary)' : '#ffffff',
               border:'none', padding:'10px 0', cursor: simPhase==='running'||!prompt.trim() ? 'not-allowed' : 'pointer',
               fontFamily:'var(--font-mono)', fontSize:10, fontWeight:600, letterSpacing:'0.14em', textTransform:'uppercase',
             }}
@@ -236,10 +236,10 @@ export default function HemisPage() {
               display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0,
             }}>
               <div>
-                <div className="mono" style={{ fontSize:9, color:'var(--color-text-dim)', letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:3 }}>
+                <div className="mono" style={{ fontSize:10, color:'var(--color-text-secondary)', letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:3 }}>
                   SIMULATION RESULTS · {simResult.id}
                 </div>
-                <div style={{ fontSize:13, color:'var(--color-text-primary)', fontStyle:'italic' }}>
+                <div style={{ fontSize:14, color:'var(--color-text-primary)', fontStyle:'italic' }}>
                   "{simResult.prompt}"
                 </div>
               </div>
@@ -251,7 +251,7 @@ export default function HemisPage() {
                 ].map(s => (
                   <div key={s.l} style={{ textAlign:'center', background:'var(--color-bg-elevated)', border:'1px solid var(--color-border)', padding:'6px 12px' }}>
                     <div className="mono" style={{ fontSize:16, fontWeight:700, color:s.c }}>{s.v}</div>
-                    <div className="mono" style={{ fontSize:8, letterSpacing:'0.1em', color:'var(--color-text-dim)', textTransform:'uppercase' }}>{s.l}</div>
+                    <div className="mono" style={{ fontSize:10, letterSpacing:'0.1em', color:'var(--color-text-secondary)', textTransform:'uppercase' }}>{s.l}</div>
                   </div>
                 ))}
               </div>
@@ -268,9 +268,9 @@ export default function HemisPage() {
                   border:'none',
                   borderBottom: activeTab===id ? `2px solid var(--color-hemis)` : '2px solid transparent',
                   borderRight:'1px solid var(--color-border)',
-                  color: activeTab===id ? 'var(--color-text-primary)' : 'var(--color-text-dim)',
+                  color: activeTab===id ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
                   padding:'10px 20px', cursor:'pointer',
-                  fontFamily:'var(--font-mono)', fontSize:10, letterSpacing:'0.1em', textTransform:'uppercase',
+                  fontFamily:'var(--font-mono)', fontSize:11, letterSpacing:'0.1em', textTransform:'uppercase',
                   transition:'all 0.12s',
                 }}>
                   {label}
@@ -307,14 +307,14 @@ export default function HemisPage() {
                         padding:'11px 14px', marginBottom:2,
                       }}>
                         <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:6, flexWrap:'wrap' }}>
-                          <span className="mono" style={{ fontSize:9, color:'var(--color-text-dim)' }}>{step.timestamp}</span>
+                          <span className="mono" style={{ fontSize:10, color:'var(--color-text-secondary)' }}>{step.timestamp}</span>
                           <span className="label-tag" style={{
-                            fontSize:8, padding:'1px 5px',
+                            fontSize:10, padding:'2px 6px',
                             color:'var(--color-hemis-orange)', borderColor:'var(--color-hemis-orange)',
                             background:'rgba(255,124,61,0.08)',
                           }}>{step.phase}</span>
-                          <span className="mono" style={{ fontSize:9, color:'var(--color-text-dim)' }}>{step.techniqueId}</span>
-                          <span style={{ fontSize:11, fontWeight:500, color:'var(--color-text-primary)' }}>{step.technique}</span>
+                          <span className="mono" style={{ fontSize:10, color:'var(--color-text-secondary)' }}>{step.techniqueId}</span>
+                          <span style={{ fontSize:12, fontWeight:500, color:'var(--color-text-primary)' }}>{step.technique}</span>
                           <span style={{
                             marginLeft:'auto', fontSize:9, fontFamily:'var(--font-mono)',
                             color: step.result==='SUCCESS' ? 'var(--color-hemis)' : 'var(--color-scanner)',
@@ -323,10 +323,10 @@ export default function HemisPage() {
                             {step.result}
                           </span>
                         </div>
-                        <div className="mono" style={{ fontSize:10, color:'var(--color-text-dim)', marginBottom:4 }}>
+                        <div className="mono" style={{ fontSize:11, color:'var(--color-text-secondary)', marginBottom:4 }}>
                           Target: {step.target}
                         </div>
-                        <div style={{ fontSize:11, color:'var(--color-text-secondary)', lineHeight:1.5 }}>
+                        <div style={{ fontSize:12, color:'var(--color-text-primary)', lineHeight:1.5 }}>
                           {step.detail}
                         </div>
                       </div>
@@ -342,7 +342,7 @@ export default function HemisPage() {
                     {([['vulnerable','VULNERABLE',vulnerableCount],['tested','TESTED',testedCount],['mitigated','MITIGATED',mitigatedCount],['untested','UNTESTED',untestedCount]] as const).map(([s,l,c]) => (
                       <div key={s} style={{ display:'flex', alignItems:'center', gap:6 }}>
                         <div style={{ width:10, height:10, background:STATUS_COLORS[s], border:`1px solid ${STATUS_COLORS[s]}` }} />
-                        <span className="mono" style={{ fontSize:9, color:'var(--color-text-secondary)', letterSpacing:'0.08em' }}>{l} ({c})</span>
+                        <span className="mono" style={{ fontSize:11, color:'var(--color-text-primary)', letterSpacing:'0.08em' }}>{l} ({c})</span>
                       </div>
                     ))}
                   </div>
@@ -351,7 +351,7 @@ export default function HemisPage() {
                   {TACTICS_ORDER.filter(tac => byTactic[tac]).map(tac => (
                     <div key={tac} style={{ marginBottom:16 }}>
                       <div className="mono" style={{
-                        fontSize:9, letterSpacing:'0.13em', color:'var(--color-hemis-orange)',
+                        fontSize:11, letterSpacing:'0.13em', color:'var(--color-hemis-orange)',
                         textTransform:'uppercase', marginBottom:6,
                       }}>
                         {tac}
@@ -365,10 +365,10 @@ export default function HemisPage() {
                             minWidth:80, maxWidth:140,
                             transition:'all 0.1s',
                           }}>
-                            <div className="mono" style={{ fontSize:8, color: t.status==='untested' ? 'var(--color-text-dim)' : STATUS_COLORS[t.status], letterSpacing:'0.06em', marginBottom:2 }}>
+                            <div className="mono" style={{ fontSize:10, color: t.status==='untested' ? 'var(--color-text-secondary)' : STATUS_COLORS[t.status], letterSpacing:'0.06em', marginBottom:2 }}>
                               {t.id}
                             </div>
-                            <div style={{ fontSize:9, color: t.status==='untested' ? 'var(--color-text-dim)' : 'var(--color-text-secondary)', lineHeight:1.3 }}>
+                            <div style={{ fontSize:11, color: t.status==='untested' ? 'var(--color-text-secondary)' : 'var(--color-text-primary)', lineHeight:1.3 }}>
                               {t.name}
                             </div>
                           </div>
@@ -389,12 +389,12 @@ export default function HemisPage() {
                   <span className="dot-live red" style={{ width:10, height:10 }} />
                 </div>
                 <div className="display" style={{ fontSize:16, color:'var(--color-hemis)', marginBottom:6 }}>Simulation in progress</div>
-                <div className="mono" style={{ fontSize:11, color:'var(--color-text-dim)' }}>Results will appear here when complete</div>
+                <div className="mono" style={{ fontSize:12, color:'var(--color-text-secondary)' }}>Results will appear here when complete</div>
               </div>
             ) : (
               <div style={{ textAlign:'center' }}>
-                <div style={{ fontSize:28, color:'var(--color-text-dim)', marginBottom:10 }}>◉</div>
-                <div className="display" style={{ fontSize:14, color:'var(--color-text-secondary)' }}>Ready to simulate</div>
+                <div style={{ fontSize:28, color:'var(--color-text-secondary)', marginBottom:10 }}>◉</div>
+                <div className="display" style={{ fontSize:15, color:'var(--color-text-primary)' }}>Ready to simulate</div>
               </div>
             )}
           </div>

@@ -17,13 +17,13 @@ export default function Topbar() {
 
   return (
     <header style={{
-      height: 52,
+      height: 60,
       background: 'var(--color-bg-surface)',
       borderBottom: '1px solid var(--color-border)',
       display: 'flex',
       alignItems: 'center',
-      padding: '0 24px',
-      gap: 16,
+      padding: '0 26px',
+      gap: 18,
       flexShrink: 0,
       position: 'sticky',
       top: 0,
@@ -31,19 +31,19 @@ export default function Topbar() {
     }}>
       {/* Page identity */}
       <div style={{ flex:1, display:'flex', alignItems:'center', gap:10 }}>
-        <span className="mono" style={{ fontSize:10, color:'var(--color-text-dim)', letterSpacing:'0.08em' }}>
+        <span className="mono" style={{ fontSize:12, color:'var(--color-text-secondary)', letterSpacing:'0.08em' }}>
           console.hemisx.com
         </span>
-        <span style={{ color:'var(--color-border-bright)', fontSize:10 }}>›</span>
-        <span className="mono" style={{ fontSize:10, color:'var(--color-text-secondary)', letterSpacing:'0.08em' }}>
+        <span style={{ color:'var(--color-border-bright)', fontSize:12 }}>›</span>
+        <span className="mono" style={{ fontSize:11, color:'var(--color-text-secondary)', letterSpacing:'0.08em' }}>
           {meta.breadcrumb}
         </span>
       </div>
 
       {/* Center title */}
-      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
         <span className="mono" style={{
-          fontSize:11, fontWeight:600, letterSpacing:'0.14em',
+          fontSize:12, fontWeight:600, letterSpacing:'0.14em',
           textTransform:'uppercase', color: meta.color,
         }}>
           {meta.title}
@@ -53,14 +53,14 @@ export default function Topbar() {
       {/* Right cluster */}
       <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'flex-end', gap:16 }}>
         {/* Live time */}
-        <div className="mono" style={{ fontSize:10, color:'var(--color-text-dim)', letterSpacing:'0.08em' }}>
+        <div className="mono" style={{ fontSize:12, color:'var(--color-text-secondary)', letterSpacing:'0.08em' }}>
           {new Date().toLocaleDateString('en-US', { month:'short', day:'2-digit', year:'numeric' })}
         </div>
 
         {/* Alert badge */}
-        <div style={{ display:'flex', alignItems:'center', gap:5, cursor:'pointer' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer' }}>
           <span className="dot-live red" style={{ width:5, height:5 }} />
-          <span className="mono" style={{ fontSize:10, color:'var(--color-hemis)', letterSpacing:'0.08em' }}>
+          <span className="mono" style={{ fontSize:11, color:'var(--color-hemis)', letterSpacing:'0.08em' }}>
             3 CRITICAL
           </span>
         </div>
@@ -73,10 +73,10 @@ export default function Topbar() {
             background: 'var(--color-bg-elevated)',
             border: '1px solid var(--color-border)',
             color: 'var(--color-text-secondary)',
-            width: 28, height: 28,
+            width: 30, height: 30,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer',
-            fontSize: 13,
+            fontSize: 14,
             transition: 'all 0.15s',
             flexShrink: 0,
           }}
@@ -98,15 +98,15 @@ export default function Topbar() {
         {/* Org */}
         <div style={{ display:'flex', alignItems:'center', gap:6 }}>
           <div style={{
-            width:22, height:22, borderRadius:'50%',
+            width:24, height:24, borderRadius:'50%',
             background:'var(--color-yellow-dim)',
             border:'1px solid var(--color-yellow)',
             display:'flex', alignItems:'center', justifyContent:'center',
           }}>
-            <span style={{ fontSize:9, color:'var(--color-yellow)', fontWeight:700 }}>H</span>
+            <span style={{ fontSize:10, color:'var(--color-yellow)', fontWeight:700 }}>H</span>
           </div>
-          <span style={{ fontSize:12, color:'var(--color-text-secondary)' }}>Acme Corp</span>
-          <span className="mono" style={{ fontSize:9, color:'var(--color-text-dim)' }}>▾</span>
+          <span style={{ fontSize:13, color:'var(--color-text-secondary)' }}>Acme Corp</span>
+          <span className="mono" style={{ fontSize:11, color:'var(--color-text-secondary)' }}>▾</span>
         </div>
       </div>
     </header>

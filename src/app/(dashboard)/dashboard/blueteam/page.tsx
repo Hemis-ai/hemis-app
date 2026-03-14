@@ -26,7 +26,7 @@ function StatusBadge({ status }: { status: ThreatAlert['status'] }) {
   }
   const m = map[status]
   return (
-    <span className="label-tag" style={{ fontSize:8, color:m.color, borderColor:m.color, background:`${m.color}15` }}>
+    <span className="label-tag" style={{ fontSize:10, color:m.color, borderColor:m.color, background:`${m.color}15` }}>
       {m.label}
     </span>
   )
@@ -82,10 +82,10 @@ export default function BlueTeamPage() {
 
         {/* Header */}
         <div style={{ padding:'16px 16px 12px', borderBottom:'1px solid var(--color-border)', background:'var(--color-bg-surface)', flexShrink:0 }}>
-          <div className="mono" style={{ fontSize:9, letterSpacing:'0.15em', color:'var(--color-blueteam)', textTransform:'uppercase', marginBottom:4 }}>
+          <div className="mono" style={{ fontSize:11, letterSpacing:'0.15em', color:'var(--color-blueteam)', textTransform:'uppercase', marginBottom:4 }}>
             [ AI BLUE TEAM · LIVE MONITORING ]
           </div>
-          <h2 className="display" style={{ fontSize:16, fontWeight:700, color:'var(--color-text-primary)', margin:0 }}>
+          <h2 className="display" style={{ fontSize:18, fontWeight:700, color:'var(--color-text-primary)', margin:0 }}>
             Threat Detection
           </h2>
         </div>
@@ -105,8 +105,8 @@ export default function BlueTeamPage() {
               padding:'10px 10px', borderRight:'1px solid var(--color-border)',
               background:'var(--color-bg-elevated)', textAlign:'center',
             }}>
-              <div className="mono" style={{ fontSize:8, letterSpacing:'0.1em', color:'var(--color-text-dim)', textTransform:'uppercase', marginBottom:3 }}>{m.label}</div>
-              <div className="mono" style={{ fontSize:13, fontWeight:700, color:m.color }}>{m.val}{m.suffix}</div>
+              <div className="mono" style={{ fontSize:10, letterSpacing:'0.1em', color:'var(--color-text-secondary)', textTransform:'uppercase', marginBottom:3 }}>{m.label}</div>
+              <div className="mono" style={{ fontSize:14, fontWeight:700, color:m.color }}>{m.val}{m.suffix}</div>
             </div>
           ))}
         </div>
@@ -119,18 +119,18 @@ export default function BlueTeamPage() {
         }}>
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
             <span className="dot-live blue" style={{ width:5, height:5 }} />
-            <span className="mono" style={{ fontSize:9, letterSpacing:'0.12em', color:'var(--color-text-secondary)', textTransform:'uppercase' }}>
+            <span className="mono" style={{ fontSize:11, letterSpacing:'0.12em', color:'var(--color-text-secondary)', textTransform:'uppercase' }}>
               ALERT FEED
             </span>
           </div>
           <div style={{ display:'flex', gap:8 }}>
             {critCount > 0 && (
-              <span className="mono" style={{ fontSize:9, color:'var(--color-hemis)', letterSpacing:'0.08em' }}>
+              <span className="mono" style={{ fontSize:10, color:'var(--color-hemis)', letterSpacing:'0.08em' }}>
                 {critCount} CRITICAL
               </span>
             )}
             {newCount > 0 && (
-              <span className="label-tag sev-info" style={{ fontSize:7, padding:'1px 4px' }}>
+              <span className="label-tag sev-info" style={{ fontSize:9, padding:'2px 6px' }}>
                 {newCount} NEW
               </span>
             )}
@@ -158,23 +158,23 @@ export default function BlueTeamPage() {
                 <div style={{ display:'flex', gap:8, alignItems:'flex-start', marginBottom:5 }}>
                   <SevDot sev={alert.severity} />
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:12, fontWeight:500, color:'var(--color-text-primary)', lineHeight:1.3, marginBottom:3 }}>
-                      {isLive && <span className="mono" style={{ fontSize:8, color:'var(--color-blueteam)', marginRight:5, letterSpacing:'0.08em' }}>NEW</span>}
+                    <div style={{ fontSize:13, fontWeight:500, color:'var(--color-text-primary)', lineHeight:1.3, marginBottom:3 }}>
+                      {isLive && <span className="mono" style={{ fontSize:9, color:'var(--color-blueteam)', marginRight:5, letterSpacing:'0.08em' }}>NEW</span>}
                       {alert.title}
                     </div>
                     <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
                       <SevBadge sev={alert.severity} />
                       <StatusBadge status={alert.status} />
-                      <span className="mono" style={{ fontSize:9, color:'var(--color-text-dim)' }}>{alert.source}</span>
+                      <span className="mono" style={{ fontSize:10, color:'var(--color-text-secondary)' }}>{alert.source}</span>
                     </div>
                   </div>
                 </div>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                  <span className="mono" style={{ fontSize:9, color:'var(--color-text-dim)' }}>
+                  <span className="mono" style={{ fontSize:10, color:'var(--color-text-secondary)' }}>
                     {new Date(alert.timestamp).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' })}
                   </span>
                   {alert.autoResponded && (
-                    <span className="mono" style={{ fontSize:8, color:'var(--color-scanner)', letterSpacing:'0.08em' }}>
+                    <span className="mono" style={{ fontSize:9, color:'var(--color-scanner)', letterSpacing:'0.08em' }}>
                       ✓ AUTO-RESPONDED
                     </span>
                   )}
@@ -197,11 +197,11 @@ export default function BlueTeamPage() {
               <div style={{ display:'flex', gap:10, alignItems:'center', marginBottom:8, flexWrap:'wrap' }}>
                 <SevBadge sev={selected.severity} />
                 <StatusBadge status={selected.status} />
-                <span className="mono" style={{ fontSize:9, color:'var(--color-text-dim)', letterSpacing:'0.06em' }}>
+                <span className="mono" style={{ fontSize:10, color:'var(--color-text-secondary)', letterSpacing:'0.06em' }}>
                   {selected.id} · {selected.source} · {selected.region}
                 </span>
               </div>
-              <h2 className="display" style={{ fontSize:17, fontWeight:700, color:'var(--color-text-primary)', margin:'0 0 8px' }}>
+              <h2 className="display" style={{ fontSize:19, fontWeight:700, color:'var(--color-text-primary)', margin:'0 0 8px' }}>
                 {selected.title}
               </h2>
               {/* AI summary */}
@@ -210,10 +210,10 @@ export default function BlueTeamPage() {
                 border:'1px solid var(--color-blueteam)33',
                 padding:'10px 14px', marginBottom:10,
               }}>
-                <div className="mono" style={{ fontSize:8, letterSpacing:'0.12em', color:'var(--color-blueteam)', textTransform:'uppercase', marginBottom:5 }}>
+                <div className="mono" style={{ fontSize:10, letterSpacing:'0.12em', color:'var(--color-blueteam)', textTransform:'uppercase', marginBottom:5 }}>
                   ⚡ AI ANALYSIS
                 </div>
-                <p style={{ fontSize:12, color:'var(--color-text-secondary)', margin:0, lineHeight:1.65 }}>
+                <p style={{ fontSize:13, color:'var(--color-text-primary)', margin:0, lineHeight:1.65 }}>
                   {selected.summary}
                 </p>
               </div>
@@ -227,8 +227,8 @@ export default function BlueTeamPage() {
                   { l:'DETECTED', v:new Date(selected.timestamp).toLocaleTimeString() },
                 ].map(m => (
                   <div key={m.l}>
-                    <div className="mono" style={{ fontSize:8, letterSpacing:'0.1em', color:'var(--color-text-dim)', textTransform:'uppercase', marginBottom:2 }}>{m.l}</div>
-                    <div className="mono" style={{ fontSize:11, color:'var(--color-text-primary)' }}>{m.v}</div>
+                    <div className="mono" style={{ fontSize:10, letterSpacing:'0.1em', color:'var(--color-text-secondary)', textTransform:'uppercase', marginBottom:2 }}>{m.l}</div>
+                    <div className="mono" style={{ fontSize:12, color:'var(--color-text-primary)' }}>{m.v}</div>
                   </div>
                 ))}
               </div>
@@ -238,7 +238,7 @@ export default function BlueTeamPage() {
 
               {/* Response actions */}
               <div style={{ marginBottom:20 }}>
-                <div className="mono" style={{ fontSize:9, letterSpacing:'0.13em', color:'var(--color-text-dim)', textTransform:'uppercase', marginBottom:10 }}>
+                <div className="mono" style={{ fontSize:11, letterSpacing:'0.13em', color:'var(--color-text-secondary)', textTransform:'uppercase', marginBottom:10 }}>
                   RESPONSE ACTIONS
                 </div>
 
@@ -256,7 +256,7 @@ export default function BlueTeamPage() {
                     {(selected.responseActions.length > 0 ? selected.responseActions : ['Automated response completed']).map((action, i) => (
                       <div key={i} style={{ display:'flex', gap:8, alignItems:'center', marginBottom:4 }}>
                         <span style={{ width:4, height:4, borderRadius:'50%', background:'var(--color-scanner)', display:'inline-block', flexShrink:0 }} />
-                        <span style={{ fontSize:11, color:'var(--color-text-secondary)' }}>{action}</span>
+                        <span style={{ fontSize:12, color:'var(--color-text-primary)' }}>{action}</span>
                       </div>
                     ))}
                   </div>
@@ -267,7 +267,7 @@ export default function BlueTeamPage() {
                       disabled={responding.has(selected.id)}
                       style={{
                         background: responding.has(selected.id) ? 'var(--color-bg-elevated)' : 'var(--color-blueteam)',
-                        color: responding.has(selected.id) ? 'var(--color-text-dim)' : '#fff',
+                        color: responding.has(selected.id) ? 'var(--color-text-secondary)' : '#fff',
                         border:'none', padding:'9px 18px', cursor: responding.has(selected.id) ? 'not-allowed' : 'pointer',
                         fontFamily:'var(--font-mono)', fontSize:10, fontWeight:600, letterSpacing:'0.12em', textTransform:'uppercase',
                       }}
@@ -293,7 +293,7 @@ export default function BlueTeamPage() {
                 {selected.tactics.length > 0 && (
                   <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
                     {selected.tactics.map(t => (
-                      <span key={t} className="label-tag" style={{ fontSize:8, color:'var(--color-hemis-orange)', borderColor:'var(--color-hemis-orange)', background:'rgba(255,124,61,0.08)' }}>
+                      <span key={t} className="label-tag" style={{ fontSize:10, color:'var(--color-hemis-orange)', borderColor:'var(--color-hemis-orange)', background:'rgba(255,124,61,0.08)' }}>
                         {t}
                       </span>
                     ))}
@@ -304,7 +304,7 @@ export default function BlueTeamPage() {
               {/* Kill chain timeline (show for first alert) */}
               {selected.id === 'alert-001' || selected.id === 'alert-002' ? (
                 <div>
-                  <div className="mono" style={{ fontSize:9, letterSpacing:'0.13em', color:'var(--color-text-dim)', textTransform:'uppercase', marginBottom:12 }}>
+                  <div className="mono" style={{ fontSize:11, letterSpacing:'0.13em', color:'var(--color-text-secondary)', textTransform:'uppercase', marginBottom:12 }}>
                     KILL CHAIN RECONSTRUCTION
                   </div>
                   <div style={{ position:'relative' }}>
@@ -331,19 +331,19 @@ export default function BlueTeamPage() {
                             border:`1px solid ${ev.severity==='CRITICAL'?'var(--color-hemis)22':'var(--color-border)'}`,
                           }}>
                             <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:3, flexWrap:'wrap' }}>
-                              <span className="mono" style={{ fontSize:9, color:'var(--color-text-dim)' }}>{ev.timestamp}</span>
+                              <span className="mono" style={{ fontSize:10, color:'var(--color-text-secondary)' }}>{ev.timestamp}</span>
                               <span className="label-tag" style={{
-                                fontSize:7, padding:'1px 5px',
+                                fontSize:9, padding:'2px 6px',
                                 color: sevColor, borderColor: sevColor, background:`${sevColor}15`,
                               }}>{ev.stage}</span>
-                              <span style={{ fontSize:11, fontWeight:500, color:'var(--color-text-primary)' }}>{ev.action}</span>
+                              <span style={{ fontSize:12, fontWeight:500, color:'var(--color-text-primary)' }}>{ev.action}</span>
                             </div>
                             <div style={{ display:'flex', gap:12 }}>
-                              <span className="mono" style={{ fontSize:10, color:'var(--color-text-dim)' }}>
-                                Actor: <span style={{ color:'var(--color-text-secondary)' }}>{ev.actor}</span>
+                              <span className="mono" style={{ fontSize:11, color:'var(--color-text-secondary)' }}>
+                                Actor: <span style={{ color:'var(--color-text-primary)' }}>{ev.actor}</span>
                               </span>
-                              <span className="mono" style={{ fontSize:10, color:'var(--color-text-dim)' }}>
-                                Target: <span style={{ color:'var(--color-text-secondary)' }}>{ev.target}</span>
+                              <span className="mono" style={{ fontSize:11, color:'var(--color-text-secondary)' }}>
+                                Target: <span style={{ color:'var(--color-text-primary)' }}>{ev.target}</span>
                               </span>
                             </div>
                           </div>
@@ -354,8 +354,8 @@ export default function BlueTeamPage() {
                 </div>
               ) : (
                 <div className="bracket-card" style={{ padding:'24px', textAlign:'center' }}>
-                  <div style={{ color:'var(--color-text-dim)', fontSize:10, marginBottom:6 }}>◎</div>
-                  <div style={{ fontSize:12, color:'var(--color-text-dim)' }}>Kill chain data available for correlated attacks</div>
+                  <div style={{ color:'var(--color-text-secondary)', fontSize:12, marginBottom:6 }}>◎</div>
+                  <div style={{ fontSize:13, color:'var(--color-text-primary)' }}>Kill chain data available for correlated attacks</div>
                 </div>
               )}
             </div>
@@ -363,8 +363,8 @@ export default function BlueTeamPage() {
         ) : (
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center' }} className="tac-grid">
             <div style={{ textAlign:'center' }}>
-              <div style={{ fontSize:28, color:'var(--color-text-dim)', marginBottom:10 }}>◎</div>
-              <div className="display" style={{ fontSize:14, color:'var(--color-text-secondary)' }}>Select an alert to investigate</div>
+              <div style={{ fontSize:28, color:'var(--color-text-secondary)', marginBottom:10 }}>◎</div>
+              <div className="display" style={{ fontSize:15, color:'var(--color-text-primary)' }}>Select an alert to investigate</div>
             </div>
           </div>
         )}
