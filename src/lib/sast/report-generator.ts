@@ -122,14 +122,14 @@ export function generateExecutiveReport(
   }))
 
   return {
-    title: `Security Assessment Report — ${scan.name}`,
+    title: `Security Assessment Report — ${scan.name ?? 'Untitled Scan'}`,
     generatedAt: new Date().toISOString(),
     scanInfo: {
-      scanId:       scan.id,
-      scanName:     scan.name,
-      language:     scan.language,
-      filesScanned: scan.filesScanned,
-      linesOfCode:  scan.linesOfCode,
+      scanId:       scan.id ?? 'unknown',
+      scanName:     scan.name ?? 'Untitled Scan',
+      language:     scan.language ?? 'unknown',
+      filesScanned: scan.filesScanned ?? 0,
+      linesOfCode:  scan.linesOfCode ?? 0,
       duration:     scan.duration ?? 0,
       completedAt:  scan.completedAt ?? new Date().toISOString(),
     },
@@ -281,5 +281,8 @@ function generateSummaryText(
     ? `Priority attention is recommended. ${high} high-severity issue${high > 1 ? 's' : ''} could be exploited under certain conditions.`
     : 'No critical or high-severity issues were found. The codebase demonstrates reasonable security hygiene.'
 
-  return `HemisX SAST scanned ${scan.filesScanned} file${scan.filesScanned > 1 ? 's' : ''} (${scan.linesOfCode.toLocaleString()} lines of ${scan.language} code) and identified ${total} security finding${total !== 1 ? 's' : ''}. The overall risk score is ${risk.overall}/100 (Grade: ${risk.grade}). ${urgency}`
+  const filesScanned = scan.filesScanned ?? 0
+  const linesOfCode = scan.linesOfCode ?? 0
+  const language = scan.language ?? 'unknown'
+  return `HemisX SAST scanned ${filesScanned} file${filesScanned > 1 ? 's' : ''} (${linesOfCode.toLocaleString()} lines of ${language} code) and identified ${total} security finding${total !== 1 ? 's' : ''}. The overall risk score is ${risk.overall}/100 (Grade: ${risk.grade}). ${urgency}`
 }
