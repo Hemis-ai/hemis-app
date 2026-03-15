@@ -1916,10 +1916,13 @@ export default function SastPage() {
   const [ghRepos, setGhRepos]           = useState<{ id: number; name: string; full_name: string; private: boolean; language: string | null; default_branch: string; updated_at: string; html_url: string }[]>([])
   const [ghSelectedRepo, setGhSelectedRepo] = useState<string>('')
   const [ghBranch, setGhBranch]         = useState('')
+  const [ghBranches, setGhBranches]     = useState<string[]>([])
+  const [ghRepoSearch, setGhRepoSearch] = useState('')
+  const [ghBranchesLoading, setGhBranchesLoading] = useState(false)
   const [ghFiles, setGhFiles]           = useState<FileEntry[]>([])
   const [ghLoading, setGhLoading]       = useState(false)
   const [ghError, setGhError]           = useState('')
-  const [ghRepoSearch, setGhRepoSearch] = useState('')
+
 
   const categories = result
     ? ['ALL', ...Array.from(new Set(result.findings.map(f => f.category)))]
@@ -1975,6 +1978,22 @@ export default function SastPage() {
       })
       .catch(() => setGhConnected(false))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function fetchGhBranches(fullName: string) {
+    const [owner, repo] = fullName.split('/')
+    setGhBranchesLoading(true)
+    setGhBranches([])
+    try {
+      const res = await fetch(`/api/github/branches?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`)
+      const data = await res.json()
+      if (res.ok && data.branches) {
+        setGhBranches(data.branches)
+        // Set default branch if not already set
+        if (data.defaultBranch) setGhBranch(data.defaultBranch)
+      }
+    } catch { /* silently fail */ }
+    setGhBranchesLoading(false)
+  }
 
   async function fetchGhRepoFiles() {
     if (!ghSelectedRepo) return
@@ -2386,6 +2405,8 @@ export default function SastPage() {
                               setGhUser(null)
                               setGhRepos([])
                               setGhSelectedRepo('')
+                              setGhBranch('')
+                              setGhBranches([])
                               setGhFiles([])
                               setGhRepoSearch('')
                             }}
@@ -2402,36 +2423,108 @@ export default function SastPage() {
                         </div>
 
                         {/* Repo selector */}
-                        <div style={{ display: 'flex', gap: 12, marginBottom: 12, alignItems: 'end' }}>
-                          <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', gap: 12, marginBottom: 12, alignItems: 'flex-end' }}>
+                          <div style={{ flex: 1, position: 'relative' }}>
                             <div className="mono" style={{ fontSize: 10, letterSpacing: '0.12em', color: 'var(--color-text-secondary)', textTransform: 'uppercase', marginBottom: 5 }}>
                               Repository
                             </div>
                             <div style={{ position: 'relative' }}>
-                              <input
-                                value={ghRepoSearch}
-                                onChange={e => { setGhRepoSearch(e.target.value); setGhSelectedRepo(''); setGhFiles([]) }}
-                                className="tac-input"
-                                style={{ display: 'block', paddingLeft: 32 }}
-                                placeholder="Search repositories..."
-                              />
-                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.3 }}>
+                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.3, pointerEvents: 'none', zIndex: 1 }}>
                                 <path d="M2 1a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h1v2l3-2h6a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2H2z" fill="none" stroke="currentColor" strokeWidth="1.2"/>
                                 <path d="M5 5h6M5 7.5h4" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
                               </svg>
+                              <input
+                                value={ghSelectedRepo ? ghSelectedRepo : ghRepoSearch}
+                                onChange={e => {
+                                  if (ghSelectedRepo) return
+                                  setGhRepoSearch(e.target.value)
+                                }}
+                                readOnly={!!ghSelectedRepo}
+                                className="tac-input"
+                                style={{ display: 'block', paddingLeft: 32, paddingRight: ghSelectedRepo ? 28 : 10, cursor: ghSelectedRepo ? 'default' : 'text' }}
+                                placeholder="Search repositories..."
+                              />
+                              {ghSelectedRepo && (
+                                <button
+                                  onClick={() => { setGhSelectedRepo(''); setGhRepoSearch(''); setGhBranch(''); setGhBranches([]); setGhFiles([]) }}
+                                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-dim)', fontSize: 14, lineHeight: 1, padding: '0 2px' }}
+                                  title="Clear selection"
+                                >×</button>
+                              )}
                             </div>
+                            {/* Repo dropdown list */}
+                            {ghRepos.length > 0 && !ghSelectedRepo && (
+                              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, border: '1px solid var(--color-border)', background: 'var(--color-bg-base)', maxHeight: 200, overflowY: 'auto', marginTop: 2 }}>
+                                {ghRepos
+                                  .filter(r => !ghRepoSearch || r.full_name.toLowerCase().includes(ghRepoSearch.toLowerCase()) || (r.language ?? '').toLowerCase().includes(ghRepoSearch.toLowerCase()))
+                                  .map(r => (
+                                    <div
+                                      key={r.id}
+                                      onClick={() => {
+                                        setGhSelectedRepo(r.full_name)
+                                        setGhRepoSearch('')
+                                        setGhBranch(r.default_branch)
+                                        setGhBranches([])
+                                        setGhFiles([])
+                                        fetchGhBranches(r.full_name)
+                                      }}
+                                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--color-border)', transition: 'background 0.1s' }}
+                                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-bg-elevated)')}
+                                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                                    >
+                                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, opacity: 0.4 }}>
+                                        <path d="M2 2.5A2.5 2.5 0 014.5 0h8.75a.75.75 0 01.75.75v12.5a.75.75 0 01-.75.75h-2.5a.75.75 0 110-1.5h1.75v-2h-8a1 1 0 00-.714 1.7.75.75 0 01-1.072 1.05A2.495 2.495 0 012 11.5v-9z" fill="currentColor" />
+                                      </svg>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: 12, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.full_name}</div>
+                                        <div className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)', marginTop: 2 }}>{r.language ?? 'Unknown'} · {r.default_branch}{r.private ? ' · private' : ''}</div>
+                                      </div>
+                                      {r.private && (
+                                        <span className="mono" style={{ fontSize: 9, padding: '1px 6px', border: '1px solid var(--color-sev-medium)44', color: 'var(--color-sev-medium)', background: 'rgba(242,209,86,0.08)' }}>PRIVATE</span>
+                                      )}
+                                    </div>
+                                  ))}
+                                {ghRepos.filter(r => !ghRepoSearch || r.full_name.toLowerCase().includes(ghRepoSearch.toLowerCase())).length === 0 && (
+                                  <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)', padding: '12px', textAlign: 'center' }}>No repos match &quot;{ghRepoSearch}&quot;</div>
+                                )}
+                              </div>
+                            )}
                           </div>
-                          <div style={{ width: 140 }}>
-                            <div className="mono" style={{ fontSize: 10, letterSpacing: '0.12em', color: 'var(--color-text-secondary)', textTransform: 'uppercase', marginBottom: 5 }}>
+                          <div style={{ width: 170 }}>
+                            <div className="mono" style={{ fontSize: 10, letterSpacing: '0.12em', color: 'var(--color-text-secondary)', textTransform: 'uppercase', marginBottom: 5, display: 'flex', alignItems: 'center', gap: 6 }}>
                               Branch
+                              {ghBranchesLoading && (
+                                <span className="dot-live" style={{ background: 'var(--color-sast)', width: 5, height: 5, display: 'inline-block', borderRadius: '50%' }} />
+                              )}
                             </div>
-                            <input
-                              value={ghBranch}
-                              onChange={e => setGhBranch(e.target.value)}
-                              className="tac-input"
-                              style={{ display: 'block' }}
-                              placeholder="main"
-                            />
+                            {ghBranches.length > 0 ? (
+                              <select
+                                value={ghBranch}
+                                onChange={e => { setGhBranch(e.target.value); setGhFiles([]) }}
+                                style={{
+                                  display: 'block', width: '100%',
+                                  background: 'var(--color-bg-base)',
+                                  border: '1px solid var(--color-border)',
+                                  color: 'var(--color-text-primary)',
+                                  fontFamily: 'var(--font-mono)', fontSize: 11,
+                                  padding: '6px 10px', outline: 'none',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {ghBranches.map(b => (
+                                  <option key={b} value={b}>{b}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                value={ghBranch}
+                                onChange={e => setGhBranch(e.target.value)}
+                                className="tac-input"
+                                style={{ display: 'block' }}
+                                placeholder={ghBranchesLoading ? 'Loading...' : !ghSelectedRepo ? 'Select repo first' : 'main'}
+                                disabled={ghBranchesLoading || !ghSelectedRepo}
+                              />
+                            )}
                           </div>
                           <button
                             onClick={fetchGhRepoFiles}
@@ -2448,58 +2541,6 @@ export default function SastPage() {
                             {ghLoading ? 'LOADING...' : 'FETCH FILES'}
                           </button>
                         </div>
-
-                        {/* Repo dropdown list */}
-                        {ghRepos.length > 0 && !ghSelectedRepo && (
-                          <div style={{
-                            border: '1px solid var(--color-border)', background: 'var(--color-bg-base)',
-                            maxHeight: 200, overflowY: 'auto', marginBottom: 12,
-                          }}>
-                            {ghRepos
-                              .filter(r => !ghRepoSearch || r.full_name.toLowerCase().includes(ghRepoSearch.toLowerCase()) || (r.language ?? '').toLowerCase().includes(ghRepoSearch.toLowerCase()))
-                              .map(r => (
-                                <div
-                                  key={r.id}
-                                  onClick={() => {
-                                    setGhSelectedRepo(r.full_name)
-                                    setGhRepoSearch(r.full_name)
-                                    setGhBranch(r.default_branch)
-                                    setGhFiles([])
-                                  }}
-                                  style={{
-                                    display: 'flex', alignItems: 'center', gap: 10,
-                                    padding: '8px 12px', cursor: 'pointer',
-                                    borderBottom: '1px solid var(--color-border)',
-                                    transition: 'background 0.1s',
-                                  }}
-                                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-bg-elevated)')}
-                                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                                >
-                                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, opacity: 0.4 }}>
-                                    <path d="M2 2.5A2.5 2.5 0 014.5 0h8.75a.75.75 0 01.75.75v12.5a.75.75 0 01-.75.75h-2.5a.75.75 0 110-1.5h1.75v-2h-8a1 1 0 00-.714 1.7.75.75 0 01-1.072 1.05A2.495 2.495 0 012 11.5v-9z" fill="currentColor" />
-                                  </svg>
-                                  <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontSize: 12, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {r.full_name}
-                                    </div>
-                                    <div className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)', marginTop: 2 }}>
-                                      {r.language ?? 'Unknown'} · {r.default_branch}{r.private ? ' · private' : ''}
-                                    </div>
-                                  </div>
-                                  {r.private && (
-                                    <span className="mono" style={{ fontSize: 9, padding: '1px 6px', border: '1px solid var(--color-sev-medium)44', color: 'var(--color-sev-medium)', background: 'rgba(242,209,86,0.08)' }}>
-                                      PRIVATE
-                                    </span>
-                                  )}
-                                </div>
-                              ))}
-                            {ghRepos.filter(r => !ghRepoSearch || r.full_name.toLowerCase().includes(ghRepoSearch.toLowerCase())).length === 0 && (
-                              <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)', padding: '12px', textAlign: 'center' }}>
-                                No repos match &quot;{ghRepoSearch}&quot;
-                              </div>
-                            )}
-                          </div>
-                        )}
 
                         {/* Error message */}
                         {ghError && (

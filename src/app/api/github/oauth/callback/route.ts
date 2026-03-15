@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
         client_id:     clientId,
         client_secret: clientSecret,
         code,
-        redirect_uri:  `${req.nextUrl.origin}/api/github/oauth/callback`,
+        redirect_uri:  `${process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || req.nextUrl.origin}/api/github/oauth/callback`,
       }),
     })
 

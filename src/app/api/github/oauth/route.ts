@@ -18,8 +18,8 @@ export async function GET(req: NextRequest) {
   // Generate a random state parameter for CSRF protection
   const state = crypto.randomBytes(20).toString('hex')
 
-  // Build the callback URL relative to the current origin
-  const origin = req.nextUrl.origin
+  // Build the callback URL — prefer NEXT_PUBLIC_APP_URL for production (Vercel proxy-safe)
+  const origin = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || req.nextUrl.origin
   const redirectUri = `${origin}/api/github/oauth/callback`
 
   // Scopes: read repos (public + private), read user profile
