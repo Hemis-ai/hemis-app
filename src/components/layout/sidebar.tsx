@@ -27,8 +27,8 @@ const PRODUCTS = [
     color: 'var(--color-hemis)',
     icon: '◉',
     children: [
-      ...(FF.sast ? [{ id: 'sast', label: 'SAST', href: '/dashboard/sast', icon: '⬡', color: 'var(--color-hemis)' }] : []),
-      ...(FF.dast ? [{ id: 'dast', label: 'DAST', href: '/dashboard/dast', icon: '◇', color: 'var(--color-dast)' }] : []),
+      ...(FF.sast ? [{ id: 'sast', label: 'SAST', href: '/dashboard/hemis/sast', icon: '⬡', color: 'var(--color-hemis)' }] : []),
+      ...(FF.dast ? [{ id: 'dast', label: 'DAST', href: '/dashboard/hemis/dast', icon: '◇', color: 'var(--color-dast)' }] : []),
     ],
   },
   ...(FF.blueteam ? [{
@@ -49,7 +49,7 @@ const NAV_ITEMS = [
 export default function Sidebar() {
   const path = usePathname()
   const [hemisExpanded, setHemisExpanded] = useState(
-    path.startsWith('/dashboard/hemis') || path.startsWith('/dashboard/sast') || path.startsWith('/dashboard/dast')
+    path.startsWith('/dashboard/hemis')
   )
 
   const activeProduct = PRODUCTS.find(p => path.startsWith(p.href))
