@@ -9,14 +9,15 @@ const PAGE_META: Record<string, { title: string; product: string; color: string;
   '/dashboard':           { title:'OVERVIEW',      product:'HemisX Console',  color:'var(--color-yellow)',   breadcrumb:'/ overview'      },
   '/dashboard/scanner':   { title:'CLOUD SCANNER', product:'Cloud Security',  color:'var(--color-scanner)',  breadcrumb:'/ scanner'        },
   '/dashboard/hemis':     { title:'HEMIS',         product:'AI Red Team',     color:'var(--color-hemis)',    breadcrumb:'/ hemis'          },
+  '/dashboard/sast':      { title:'SAST',          product:'Static Analysis', color:'var(--color-hemis)',    breadcrumb:'/ hemis / sast'    },
+  '/dashboard/dast':      { title:'DAST',          product:'Web App Security', color:'var(--color-dast)',     breadcrumb:'/ hemis / dast'    },
   '/dashboard/blueteam':  { title:'BLUE TEAM',     product:'Threat Response', color:'var(--color-blueteam)', breadcrumb:'/ blue-team'      },
-  '/dashboard/dast':      { title:'DAST',          product:'Web App Security', color:'var(--color-dast)',     breadcrumb:'/ dast'            },
 }
 
 const PRODUCT_TOOLS = {
   hemis: [
-    { href:'/dashboard/hemis', label:'SAST', icon:'⬡' },
-    { href:'/dashboard/hemis/scanner', label:'DAST', icon:'◈' },
+    { href:'/dashboard/sast', label:'SAST', icon:'⬡' },
+    { href:'/dashboard/dast', label:'DAST', icon:'◇' },
     { href:'/dashboard/hemis/payloads', label:'WHITE BOX RED TEAMING', icon:'◉' },
     { href:'/dashboard/hemis/findings', label:'BLACK BOX RED TEAMING', icon:'◌' },
     { href:'/dashboard/hemis/engagements', label:'FINDINGS ENGINE', icon:'▦' },
@@ -46,8 +47,9 @@ export default function Topbar() {
   const meta = PAGE_META[path] ?? PAGE_META['/dashboard']
   const [showToolsDropdown, setShowToolsDropdown] = useState(false)
 
-  // Determine active product
-  const activeProduct = PRODUCTS.find(p => path.startsWith(`/dashboard/${p.id}`))
+  // Determine active product (SAST and DAST are sub-products of HEMIS)
+  const effectivePath = (path.startsWith('/dashboard/sast') || path.startsWith('/dashboard/dast')) ? '/dashboard/hemis' : path
+  const activeProduct = PRODUCTS.find(p => effectivePath.startsWith(`/dashboard/${p.id}`))
   const tools = activeProduct ? PRODUCT_TOOLS[activeProduct.id as keyof typeof PRODUCT_TOOLS] : []
 
   return (

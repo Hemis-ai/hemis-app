@@ -29,6 +29,7 @@ model Organization {
   redTeamScans RedTeamScan[]
   auditLogs            AuditLog[]
   sastScans            SastScan[]
+  dastScans            DastScan[]
   githubInstallations  GitHubInstallation[]
 }
 
@@ -340,6 +341,111 @@ model SastFinding {
   @@index([scanId])
   @@index([severity])
   @@index([ruleId])
+}
+
+// ─── DAST ─────────────────────────────────────────────────────────────────
+
+enum DastScanStatus {
+  CREATED
+  QUEUED
+  RUNNING
+  PAUSED
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum DastFindingStatus {
+  OPEN
+  ACKNOWLEDGED
+  REMEDIATED
+  FALSE_POSITIVE
+  IN_PROGRESS
+}
+
+model DastScan {
+  id                  String         @id @default(cuid())
+  orgId               String
+  name                String
+  targetUrl           String
+  scope               String[]
+  excludedPaths       String[]
+  authConfig          Json?
+  scanProfile         String         @default("full") // full | quick | api_only
+  status              DastScanStatus @default(CREATED)
+  progress            Int            @default(0)
+  currentPhase        String         @default("created")
+  riskScore           Int?
+  endpointsDiscovered Int            @default(0)
+  endpointsTested     Int            @default(0)
+  payloadsSent        Int            @default(0)
+  techStackDetected   String[]
+
+  // Denormalized severity counts
+  criticalCount       Int            @default(0)
+  highCount           Int            @default(0)
+  mediumCount         Int            @default(0)
+  lowCount            Int            @default(0)
+  infoCount           Int            @default(0)
+
+  executiveSummary    String?        @db.Text
+  reportUrl           String?
+
+  // ZAP scan IDs (for pause/resume)
+  zapScanId           String?
+  zapSpiderScanId     String?
+  zapAjaxScanId       String?
+
+  createdAt           DateTime       @default(now())
+  startedAt           DateTime?
+  completedAt         DateTime?
+
+  org          Organization  @relation(fields: [orgId], references: [id])
+  dastFindings DastFinding[]
+
+  @@index([orgId, createdAt])
+  @@index([status])
+}
+
+model DastFinding {
+  id                  String            @id @default(cuid())
+  scanId              String
+  zapAlertId          String?
+  pluginId            String?
+  type                String            // sql_injection, xss_reflected, etc.
+  owaspCategory       String            // A03:2021-Injection
+  cweId               String?
+  severity            Severity
+  cvssScore           Float?
+  cvssVector          String?
+  riskScore           Int               @default(0)
+  title               String
+  description         String            @db.Text
+  businessImpact      String?           @db.Text
+  affectedUrl         String
+  affectedParameter   String?
+  injectionPoint      String?
+  payload             String?           @db.Text
+  requestEvidence     String?           @db.Text
+  responseEvidence    String?           @db.Text
+  remediation         String            @db.Text
+  remediationCode     String?           @db.Text
+  pciDssRefs          String[]
+  soc2Refs            String[]
+  mitreAttackIds      String[]
+  confidenceScore     Int               @default(50)
+  status              DastFindingStatus @default(OPEN)
+  isConfirmed         Boolean           @default(false)
+  notes               String?           @db.Text
+  verifiedAt          DateTime?
+  remediatedAt        DateTime?
+  discoveredAt        DateTime          @default(now())
+
+  scan DastScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@index([scanId])
+  @@index([severity])
+  @@index([status])
 }
 
 // ─── GitHub App Integration ───────────────────────────────────────────────

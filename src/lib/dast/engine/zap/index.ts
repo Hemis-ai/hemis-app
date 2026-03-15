@@ -1,0 +1,5 @@
+export { ZapClient, ZapApiError } from './zap-client'
+export { runSpider } from './spider'
+export { runActiveScan, pauseScan, resumeScan, cancelScan } from './scanner'
+export { fetchAlerts } from './alerts'
+export { configureAuth, cleanupAuth } from './auth'

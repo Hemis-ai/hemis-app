@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import type { Severity, DastScan, DastFinding, DastScanProgress } from '@/lib/types'
 import { MOCK_DAST_SCANS, MOCK_DAST_FINDINGS } from '@/lib/mock-data/dast'
 
@@ -21,21 +21,63 @@ const PHASE_LABELS: Record<string, string> = {
 // ─── Page ───────────────────────────────────────────────────────────────────
 
 export default function DastPage() {
-  const [scans] = useState<DastScan[]>(MOCK_DAST_SCANS)
+  const [scans, setScans] = useState<DastScan[]>(MOCK_DAST_SCANS)
   const [selectedScan, setSelectedScan] = useState<DastScan>(MOCK_DAST_SCANS[0])
-  const [findings] = useState<DastFinding[]>(MOCK_DAST_FINDINGS)
+  const [findings, setFindings] = useState<DastFinding[]>(MOCK_DAST_FINDINGS)
   const [severityFilter, setSeverityFilter] = useState<Severity | 'ALL'>('ALL')
   const [selectedFinding, setSelectedFinding] = useState<DastFinding | null>(null)
   const [showNewScan, setShowNewScan] = useState(false)
+  const [newScanName, setNewScanName] = useState('')
+  const [newScanUrl, setNewScanUrl] = useState('')
+  const [newScanProfile, setNewScanProfile] = useState<'full' | 'quick' | 'api_only'>('full')
 
-  // ── Simulated scan progress state ──
+  // ── Scan progress state ──
   const [isScanning, setIsScanning] = useState(false)
   const [scanProgress, setScanProgress] = useState<DastScanProgress | null>(null)
   const progressRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // ── Fetch scans from API on mount ──
+  const fetchScans = useCallback(async () => {
+    try {
+      const res = await fetch('/api/dast/scans')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.scans?.length > 0) {
+          setScans(data.scans)
+          setSelectedScan(data.scans[0])
+        }
+      }
+    } catch { /* fallback to mock data */ }
+  }, [])
+
+  // ── Fetch findings for selected scan ──
+  const fetchFindings = useCallback(async (scanId: string) => {
+    try {
+      const res = await fetch(`/api/dast/findings?scanId=${scanId}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.findings?.length > 0) {
+          setFindings((prev) => {
+            const otherFindings = prev.filter((f) => f.scanId !== scanId)
+            return [...otherFindings, ...data.findings]
+          })
+        }
+      }
+    } catch { /* fallback to mock data */ }
+  }, [])
 
   useEffect(() => {
-    return () => { if (progressRef.current) clearInterval(progressRef.current) }
-  }, [])
+    fetchScans()
+    return () => {
+      if (progressRef.current) clearInterval(progressRef.current)
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+  }, [fetchScans])
+
+  useEffect(() => {
+    if (selectedScan) fetchFindings(selectedScan.id)
+  }, [selectedScan, fetchFindings])
 
   const filteredFindings = findings
     .filter(f => f.scanId === selectedScan.id)
@@ -44,7 +86,44 @@ export default function DastPage() {
 
   const totalForScan = findings.filter(f => f.scanId === selectedScan.id).length
 
-  // ── Simulated scan ──
+  // ── Start real scan via API ──
+  async function startRealScan(name: string, targetUrl: string, scanProfile: string) {
+    try {
+      const res = await fetch('/api/dast/scans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, targetUrl, scanProfile }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const newScan = data.scan
+        setIsScanning(true)
+        setShowNewScan(false)
+        // Poll for progress
+        pollRef.current = setInterval(async () => {
+          try {
+            const pollRes = await fetch(`/api/dast/scans/${newScan.id}`)
+            if (pollRes.ok) {
+              const pollData = await pollRes.json()
+              const scan = pollData.scan
+              const progress = pollData.progress
+              if (progress) setScanProgress(progress)
+              if (scan.status === 'COMPLETED' || scan.status === 'FAILED') {
+                if (pollRef.current) clearInterval(pollRef.current)
+                pollRef.current = null
+                setTimeout(() => { setIsScanning(false); setScanProgress(null); fetchScans() }, 2000)
+              }
+            }
+          } catch { /* ignore poll errors */ }
+        }, 2000)
+        return
+      }
+    } catch { /* fallback to mock scan */ }
+    // Fallback: mock scan
+    startMockScan()
+  }
+
+  // ── Simulated scan (fallback when API unavailable) ──
   function startMockScan() {
     setIsScanning(true)
     setShowNewScan(false)
@@ -132,20 +211,21 @@ export default function DastPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
               <div>
                 <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>TARGET URL</label>
-                <input className="tac-input" placeholder="https://example.com" style={{ marginTop: 4 }} />
+                <input className="tac-input" placeholder="https://example.com" style={{ marginTop: 4 }} value={newScanUrl} onChange={e => setNewScanUrl(e.target.value)} />
               </div>
               <div>
                 <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>SCAN NAME</label>
-                <input className="tac-input" placeholder="My Web App Scan" style={{ marginTop: 4 }} />
+                <input className="tac-input" placeholder="My Web App Scan" style={{ marginTop: 4 }} value={newScanName} onChange={e => setNewScanName(e.target.value)} />
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
               {(['full', 'quick', 'api_only'] as const).map(profile => (
                 <div
                   key={profile}
+                  onClick={() => setNewScanProfile(profile)}
                   style={{
-                    background: 'var(--color-bg-elevated)',
-                    border: '1px solid var(--color-border)',
+                    background: newScanProfile === profile ? 'var(--color-dast-dim)' : 'var(--color-bg-elevated)',
+                    border: `1px solid ${newScanProfile === profile ? 'var(--color-dast)' : 'var(--color-border)'}`,
                     padding: '10px 14px',
                     cursor: 'pointer',
                     textAlign: 'center',
@@ -162,7 +242,14 @@ export default function DastPage() {
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <button
-                onClick={startMockScan}
+                onClick={() => {
+                  const name = newScanName.trim() || 'DAST Scan'
+                  const url = newScanUrl.trim()
+                  if (!url) return
+                  startRealScan(name, url, newScanProfile)
+                  setNewScanName(''); setNewScanUrl(''); setNewScanProfile('full')
+                }}
+                disabled={!newScanUrl.trim()}
                 style={{
                   background: 'var(--color-dast)',
                   color: '#fff',
@@ -173,7 +260,8 @@ export default function DastPage() {
                   fontWeight: 600,
                   letterSpacing: '0.12em',
                   textTransform: 'uppercase',
-                  cursor: 'pointer',
+                  cursor: !newScanUrl.trim() ? 'not-allowed' : 'pointer',
+                  opacity: !newScanUrl.trim() ? 0.5 : 1,
                 }}
               >
                 START SCAN
