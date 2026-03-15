@@ -20,11 +20,17 @@ model Organization {
   plan      Plan     @default(STARTER)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  users     User[]
-  scans     Scan[]
-  simulations Simulation[]
-  alerts    Alert[]
-  awsAccounts AwsAccount[]
+
+  users        User[]
+  scans        Scan[]
+  simulations  Simulation[]
+  alerts       Alert[]
+  awsAccounts  AwsAccount[]
+  redTeamScans RedTeamScan[]
+  auditLogs            AuditLog[]
+  sastScans            SastScan[]
+  dastScans            DastScan[]
+  githubInstallations  GitHubInstallation[]
 }
 
 model User {
@@ -137,11 +143,236 @@ model Alert {
 }
 
 // ─── Enums ─────────────────────────────────────────────────────────────────
-enum Plan        { STARTER PROFESSIONAL ENTERPRISE }
-enum UserRole    { OWNER ADMIN ANALYST MEMBER VIEWER }
-enum Severity    { CRITICAL HIGH MEDIUM LOW INFO }
-enum FindingStatus { OPEN REMEDIATED ACKNOWLEDGED IN_PROGRESS }
-enum AlertStatus { NEW INVESTIGATING CONTAINED RESOLVED }
-enum ScanStatus  { PENDING RUNNING COMPLETED FAILED }
-enum SimStatus   { PENDING RUNNING COMPLETED FAILED }
-enum StepResult  { SUCCESS FAILED PARTIAL }
+
+enum Plan {
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  ANALYST
+  MEMBER
+  VIEWER
+}
+
+enum Severity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+enum FindingStatus {
+  OPEN
+  REMEDIATED
+  ACKNOWLEDGED
+  IN_PROGRESS
+}
+
+enum AlertStatus {
+  NEW
+  INVESTIGATING
+  CONTAINED
+  RESOLVED
+}
+
+enum ScanStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum SimStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum StepResult {
+  SUCCESS
+  FAILED
+  PARTIAL
+}
+
+// ─── SAST ──────────────────────────────────────────────────────────────────
+
+model SastScan {
+  id           String     @id @default(cuid())
+  orgId        String
+  initiatedBy  String
+  name         String     // user-given name or filename
+  language     String     // detected: js, ts, py, php, java, go, ruby, unknown
+  linesOfCode  Int        @default(0)
+  status       ScanStatus @default(PENDING)
+  filesScanned Int        @default(0)
+  duration     Int?       // ms
+  startedAt    DateTime   @default(now())
+  completedAt  DateTime?
+
+  // Summary counts (denormalised for fast dashboard queries)
+  criticalCount Int @default(0)
+  highCount     Int @default(0)
+  mediumCount   Int @default(0)
+  lowCount      Int @default(0)
+  infoCount     Int @default(0)
+
+  org      Organization @relation(fields: [orgId], references: [id])
+  user     User         @relation(fields: [initiatedBy], references: [id])
+  findings SastFinding[]
+
+  @@index([orgId, startedAt])
+}
+
+model SastFinding {
+  id          String        @id @default(cuid())
+  scanId      String
+  ruleId      String        // e.g. "SAST-SQL-001"
+  ruleName    String
+  severity    Severity
+  confidence  String        // HIGH | MEDIUM | LOW
+  language    String
+  filePath    String
+  lineStart   Int
+  lineEnd     Int
+  codeSnippet String        @db.Text
+  description String        @db.Text
+  remediation String        @db.Text
+  owasp       String        // "A03:2021 – Injection"
+  cwe         String        // "CWE-89"
+  category    String        // Injection | Cryptography | Auth | etc.
+  status      FindingStatus @default(OPEN)
+  falsePositive Boolean     @default(false)
+  detectedAt  DateTime      @default(now())
+
+  scan SastScan @relation(fields: [scanId], references: [id])
+
+  @@index([scanId])
+  @@index([severity])
+  @@index([ruleId])
+}
+
+// ─── DAST ─────────────────────────────────────────────────────────────────
+
+enum DastScanStatus {
+  CREATED
+  QUEUED
+  RUNNING
+  PAUSED
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum DastFindingStatus {
+  OPEN
+  ACKNOWLEDGED
+  REMEDIATED
+  FALSE_POSITIVE
+  IN_PROGRESS
+}
+
+model DastScan {
+  id                  String         @id @default(cuid())
+  orgId               String
+  name                String
+  targetUrl           String
+  scope               String[]
+  excludedPaths       String[]
+  authConfig          Json?
+  scanProfile         String         @default("full") // full | quick | api_only
+  status              DastScanStatus @default(CREATED)
+  progress            Int            @default(0)
+  currentPhase        String         @default("created")
+  riskScore           Int?
+  endpointsDiscovered Int            @default(0)
+  endpointsTested     Int            @default(0)
+  payloadsSent        Int            @default(0)
+  techStackDetected   String[]
+
+  // Denormalized severity counts
+  criticalCount       Int            @default(0)
+  highCount           Int            @default(0)
+  mediumCount         Int            @default(0)
+  lowCount            Int            @default(0)
+  infoCount           Int            @default(0)
+
+  executiveSummary    String?        @db.Text
+  reportUrl           String?
+
+  // ZAP scan IDs (for pause/resume)
+  zapScanId           String?
+  zapSpiderScanId     String?
+  zapAjaxScanId       String?
+
+  createdAt           DateTime       @default(now())
+  startedAt           DateTime?
+  completedAt         DateTime?
+
+  org          Organization  @relation(fields: [orgId], references: [id])
+  dastFindings DastFinding[]
+
+  @@index([orgId, createdAt])
+  @@index([status])
+}
+
+model DastFinding {
+  id                  String            @id @default(cuid())
+  scanId              String
+  zapAlertId          String?
+  pluginId            String?
+  type                String            // sql_injection, xss_reflected, etc.
+  owaspCategory       String            // A03:2021-Injection
+  cweId               String?
+  severity            Severity
+  cvssScore           Float?
+  cvssVector          String?
+  riskScore           Int               @default(0)
+  title               String
+  description         String            @db.Text
+  businessImpact      String?           @db.Text
+  affectedUrl         String
+  affectedParameter   String?
+  injectionPoint      String?
+  payload             String?           @db.Text
+  requestEvidence     String?           @db.Text
+  responseEvidence    String?           @db.Text
+  remediation         String            @db.Text
+  remediationCode     String?           @db.Text
+  pciDssRefs          String[]
+  soc2Refs            String[]
+  mitreAttackIds      String[]
+  confidenceScore     Int               @default(50)
+  status              DastFindingStatus @default(OPEN)
+  isConfirmed         Boolean           @default(false)
+  notes               String?           @db.Text
+  verifiedAt          DateTime?
+  remediatedAt        DateTime?
+  discoveredAt        DateTime          @default(now())
+
+  scan DastScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@index([scanId])
+  @@index([severity])
+  @@index([status])
+}
+
+// ─── GitHub App Integration ───────────────────────────────────────────────
+model GitHubInstallation {
+  id             String   @id @default(cuid())
+  orgId          String
+  installationId Int      @unique
+  accountLogin   String   @default("")
+  accountType    String   @default("Organization") // "Organization" or "User"
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId])
+}

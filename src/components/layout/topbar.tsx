@@ -7,15 +7,48 @@ const PAGE_META: Record<string, { title: string; product: string; color: string;
   '/dashboard':           { title:'OVERVIEW',      product:'HemisX Console',  color:'var(--color-yellow)',   breadcrumb:'/ overview'      },
   '/dashboard/scanner':   { title:'CLOUD SCANNER', product:'Cloud Security',  color:'var(--color-scanner)',  breadcrumb:'/ scanner'        },
   '/dashboard/hemis':     { title:'HEMIS',         product:'AI Red Team',     color:'var(--color-hemis)',    breadcrumb:'/ hemis'          },
+  '/dashboard/sast':      { title:'SAST',          product:'Static Analysis', color:'var(--color-hemis)',    breadcrumb:'/ hemis / sast'    },
+  '/dashboard/dast':      { title:'DAST',          product:'Web App Security', color:'var(--color-dast)',     breadcrumb:'/ hemis / dast'    },
   '/dashboard/blueteam':  { title:'BLUE TEAM',     product:'Threat Response', color:'var(--color-blueteam)', breadcrumb:'/ blue-team'      },
-  '/dashboard/hemis/sast': { title:'SAST',           product:'Static Analysis', color:'var(--color-hemis)',    breadcrumb:'/ hemis / sast'    },
-  '/dashboard/hemis/dast': { title:'DAST',           product:'Dynamic Testing', color:'var(--color-hemis)',    breadcrumb:'/ hemis / dast'    },
 }
+
+const PRODUCT_TOOLS = {
+  hemis: [
+    { href:'/dashboard/sast', label:'SAST', icon:'⬡' },
+    { href:'/dashboard/dast', label:'DAST', icon:'◇' },
+    { href:'/dashboard/hemis/payloads', label:'WHITE BOX RED TEAMING', icon:'◉' },
+    { href:'/dashboard/hemis/findings', label:'BLACK BOX RED TEAMING', icon:'◌' },
+    { href:'/dashboard/hemis/engagements', label:'FINDINGS ENGINE', icon:'▦' },
+    { href:'/dashboard/hemis/reports', label:'REPORT GENERATOR', icon:'▤' },
+  ],
+  scanner: [
+    { href:'/dashboard/scanner', label:'CLOUD SCAN', icon:'◈' },
+    { href:'/dashboard/scanner', label:'COMPLIANCE', icon:'▤' },
+    { href:'/dashboard/scanner', label:'INVENTORY', icon:'◌' },
+  ],
+  blueteam: [
+    { href:'/dashboard/blueteam', label:'ALERTS', icon:'◎' },
+    { href:'/dashboard/blueteam', label:'DETECTION RULES', icon:'▦' },
+    { href:'/dashboard/blueteam', label:'PLAYBOOKS', icon:'◌' },
+  ],
+}
+
+const PRODUCTS = [
+  { id: 'scanner', label: 'CLOUD SCANNER', color: 'var(--color-scanner)' },
+  { id: 'hemis', label: 'HEMIS', color: 'var(--color-hemis)' },
+  { id: 'blueteam', label: 'BLUE TEAM', color: 'var(--color-blueteam)' },
+]
 
 export default function Topbar() {
   const path = usePathname()
   const { theme, toggle } = useTheme()
   const meta = PAGE_META[path] ?? PAGE_META['/dashboard']
+  const [showToolsDropdown, setShowToolsDropdown] = useState(false)
+
+  // Determine active product (SAST and DAST are sub-products of HEMIS)
+  const effectivePath = (path.startsWith('/dashboard/sast') || path.startsWith('/dashboard/dast')) ? '/dashboard/hemis' : path
+  const activeProduct = PRODUCTS.find(p => effectivePath.startsWith(`/dashboard/${p.id}`))
+  const tools = activeProduct ? PRODUCT_TOOLS[activeProduct.id as keyof typeof PRODUCT_TOOLS] : []
 
   return (
     <header style={{
