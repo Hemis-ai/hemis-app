@@ -221,14 +221,45 @@ function runCmd() {
 
 // ─── Finding card ────────────────────────────────────────────────────────────
 
+interface AiEnrichmentData {
+  falsePositiveProbability: number
+  fpReasoning: string
+  businessImpact: string
+  impactLevel: string
+  detailedRemediation: string
+  fixCode: string
+  fixLanguage: string
+  executiveExplanation: string
+  relatedCVEs: string[]
+  attackTechniques: string[]
+  aiConfidence: number
+  model: string
+}
+
 function FindingCard({ f, index, onToggleFP }: {
   f: SastFindingResult
   index: number
   onToggleFP?: (id: string, fp: boolean) => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [aiData, setAiData] = useState<AiEnrichmentData | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
   const sev = f.severity as SastSeverity
   const isFP = f.falsePositive
+
+  async function analyzeWithAI() {
+    setAiLoading(true)
+    try {
+      const res = await fetch('/api/sast/enrich', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'finding', finding: f }),
+      })
+      const data = await res.json()
+      if (data.enrichment) setAiData(data.enrichment)
+    } catch { /* ignore */ }
+    setAiLoading(false)
+  }
 
   return (
     <div
@@ -378,8 +409,84 @@ function FindingCard({ f, index, onToggleFP }: {
               }}>
                 {f.codeSnippet}
               </pre>
+
+              {/* AI Analysis button */}
+              <button
+                onClick={e => { e.stopPropagation(); analyzeWithAI() }}
+                disabled={aiLoading || !!aiData}
+                className="mono"
+                style={{
+                  marginTop: 10, padding: '6px 14px', fontSize: 10, cursor: aiLoading ? 'not-allowed' : 'pointer',
+                  letterSpacing: '0.08em', display: 'flex', alignItems: 'center', gap: 6,
+                  background: aiData ? 'var(--color-sast)15' : 'var(--color-bg-elevated)',
+                  border: `1px solid ${aiData ? 'var(--color-sast)' : 'var(--color-border)'}`,
+                  color: aiData ? 'var(--color-sast)' : 'var(--color-text-dim)',
+                }}
+              >
+                {aiLoading ? (
+                  <><span className="dot-live" style={{ background: 'var(--color-sast)', width: 6, height: 6 }} /> ANALYZING...</>
+                ) : aiData ? '✓ AI ANALYSIS COMPLETE' : '⚡ ANALYZE WITH AI'}
+              </button>
             </div>
           </div>
+
+          {/* AI Enrichment Results */}
+          {aiData && (
+            <div style={{ marginTop: 14, padding: 14, background: 'var(--color-bg-base)', border: '1px solid var(--color-sast)33' }}>
+              <div className="mono" style={{ fontSize: 10, letterSpacing: '0.12em', color: 'var(--color-sast)', textTransform: 'uppercase', marginBottom: 10 }}>
+                [ AI ANALYSIS — {aiData.model.split('/').pop()} ]
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <div>
+                  <div className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)', marginBottom: 4, textTransform: 'uppercase' }}>Executive Summary</div>
+                  <p style={{ fontSize: 12, color: 'var(--color-text-primary)', lineHeight: 1.5, margin: 0, marginBottom: 10 }}>
+                    {aiData.executiveExplanation}
+                  </p>
+
+                  <div className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)', marginBottom: 4, textTransform: 'uppercase' }}>Business Impact</div>
+                  <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.5, margin: 0, marginBottom: 10 }}>
+                    {aiData.businessImpact}
+                  </p>
+
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <span className="mono" style={{ fontSize: 9, padding: '2px 8px', border: '1px solid var(--color-border)', color: 'var(--color-text-dim)' }}>
+                      FP Probability: {aiData.falsePositiveProbability}%
+                    </span>
+                    <span className="mono" style={{ fontSize: 9, padding: '2px 8px', border: '1px solid var(--color-border)', color: 'var(--color-text-dim)' }}>
+                      AI Confidence: {aiData.aiConfidence}%
+                    </span>
+                    {aiData.relatedCVEs.length > 0 && aiData.relatedCVEs.map(cve => (
+                      <span key={cve} className="mono" style={{ fontSize: 9, padding: '2px 8px', background: 'var(--color-sev-high)12', border: '1px solid var(--color-sev-high)44', color: 'var(--color-sev-high)' }}>
+                        {cve}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mono" style={{ fontSize: 9, color: 'var(--color-scanner)', marginBottom: 4, textTransform: 'uppercase' }}>AI Remediation</div>
+                  <pre style={{ fontSize: 11, color: 'var(--color-text-secondary)', lineHeight: 1.5, margin: 0, marginBottom: 10, whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
+                    {aiData.detailedRemediation}
+                  </pre>
+
+                  {aiData.fixCode && (
+                    <>
+                      <div className="mono" style={{ fontSize: 9, color: 'var(--color-scanner)', marginBottom: 4, textTransform: 'uppercase' }}>Suggested Fix</div>
+                      <pre style={{
+                        fontFamily: 'var(--font-mono)', fontSize: 10, lineHeight: 1.5,
+                        background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border)',
+                        padding: '8px 10px', margin: 0, overflowX: 'auto',
+                        color: 'var(--color-text-secondary)', maxHeight: 150,
+                      }}>
+                        {aiData.fixCode}
+                      </pre>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -826,11 +933,944 @@ function MultiFileInput({
   )
 }
 
+// ─── Compliance Panel ─────────────────────────────────────────────────────────
+
+interface ComplianceResultData {
+  framework:     string
+  fullName:      string
+  totalControls: number
+  passedControls: number
+  failedControls: number
+  score:         number
+  controls:      {
+    control: { id: string; name: string; description: string; criticality: string }
+    status:  'PASS' | 'FAIL' | 'PARTIAL' | 'N/A'
+    findings: SastFindingResult[]
+    highest: SastSeverity | null
+  }[]
+}
+
+function CompliancePanel({ findings }: { findings: SastFindingResult[] }) {
+  const [results, setResults]         = useState<ComplianceResultData[]>([])
+  const [loading, setLoading]         = useState(false)
+  const [expandedFw, setExpandedFw]   = useState<string | null>(null)
+  const [selectedFw, setSelectedFw]   = useState<string>('ALL')
+
+  const runCompliance = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/sast/compliance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          findings,
+          framework: selectedFw !== 'ALL' ? selectedFw : undefined,
+        }),
+      })
+      const data = await res.json()
+      if (data.results) setResults(data.results)
+    } catch { /* ignore */ }
+    setLoading(false)
+  }, [findings, selectedFw])
+
+  useEffect(() => {
+    if (findings.length > 0) runCompliance()
+  }, [findings.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const statusColor = (s: string) =>
+    s === 'PASS' ? 'var(--color-scanner)' : s === 'FAIL' ? 'var(--color-sev-critical)' : 'var(--color-sev-medium)'
+
+  const scoreColor = (score: number) =>
+    score >= 80 ? 'var(--color-scanner)' : score >= 50 ? 'var(--color-sev-medium)' : 'var(--color-sev-critical)'
+
+  if (findings.length === 0) {
+    return (
+      <div className="bracket-card" style={{ padding: 40, textAlign: 'center', marginTop: 20 }}>
+        <div style={{ fontSize: 36, color: 'var(--color-text-dim)', marginBottom: 12 }}>◇</div>
+        <div className="mono" style={{ fontSize: 12, color: 'var(--color-text-dim)', letterSpacing: '0.08em' }}>
+          Run a SAST scan first to generate compliance reports.
+        </div>
+        <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 8, opacity: 0.6 }}>
+          Supports PCI-DSS 4.0, SOC2, OWASP ASVS, ISO 27001, HIPAA, GDPR
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      {/* Framework selector */}
+      <div className="bracket-card" style={{ padding: 16, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <span className="mono" style={{ fontSize: 10, letterSpacing: '0.12em', color: 'var(--color-text-dim)', textTransform: 'uppercase' }}>
+            Framework:
+          </span>
+          {['ALL', 'PCI-DSS', 'SOC2', 'OWASP-ASVS', 'ISO-27001', 'HIPAA', 'GDPR'].map(fw => (
+            <button
+              key={fw}
+              onClick={() => { setSelectedFw(fw); setTimeout(runCompliance, 0) }}
+              className="mono"
+              style={{
+                padding: '4px 12px', fontSize: 10, cursor: 'pointer',
+                background: selectedFw === fw ? 'var(--color-sast)18' : 'var(--color-bg-elevated)',
+                border: `1px solid ${selectedFw === fw ? 'var(--color-sast)' : 'var(--color-border)'}`,
+                color: selectedFw === fw ? 'var(--color-sast)' : 'var(--color-text-dim)',
+                letterSpacing: '0.06em',
+              }}
+            >
+              {fw}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)', padding: '20px 0', textAlign: 'center' }}>
+          Mapping findings to compliance frameworks...
+        </div>
+      ) : (
+        <>
+          {/* Framework score cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
+            {results.map(r => (
+              <div
+                key={r.framework}
+                onClick={() => setExpandedFw(expandedFw === r.framework ? null : r.framework)}
+                style={{
+                  background: expandedFw === r.framework ? 'var(--color-bg-elevated)' : 'var(--color-bg-surface)',
+                  border: `1px solid ${expandedFw === r.framework ? 'var(--color-sast)' : 'var(--color-border)'}`,
+                  padding: 16, cursor: 'pointer', transition: 'all 0.15s',
+                }}
+              >
+                <div className="mono" style={{ fontSize: 10, letterSpacing: '0.1em', color: 'var(--color-text-dim)', marginBottom: 8, textTransform: 'uppercase' }}>
+                  {r.framework}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 8 }}>
+                  <span style={{ fontSize: 32, fontWeight: 700, color: scoreColor(r.score) }}>
+                    {r.score}
+                  </span>
+                  <span className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)' }}>/100</span>
+                </div>
+
+                {/* Mini bar */}
+                <div style={{ height: 4, background: 'var(--color-bg-base)', marginBottom: 8 }}>
+                  <div style={{ height: '100%', width: `${r.score}%`, background: scoreColor(r.score), transition: 'width 0.3s' }} />
+                </div>
+
+                <div className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)' }}>
+                  {r.passedControls} passed · {r.failedControls} failed · {r.totalControls} total
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Expanded framework detail */}
+          {expandedFw && (() => {
+            const fw = results.find(r => r.framework === expandedFw)
+            if (!fw) return null
+            return (
+              <div className="bracket-card" style={{ padding: 20 }}>
+                <div className="mono" style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--color-sast)', textTransform: 'uppercase', marginBottom: 6 }}>
+                  [ {fw.fullName} — CONTROL ASSESSMENT ]
+                </div>
+                <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', marginBottom: 16 }}>
+                  Score: {fw.score}/100 · {fw.passedControls} passed · {fw.failedControls} failed
+                </div>
+
+                {fw.controls.map(ca => (
+                  <div
+                    key={ca.control.id}
+                    style={{
+                      display: 'grid', gridTemplateColumns: '90px 1fr auto',
+                      gap: 12, alignItems: 'start',
+                      padding: '10px 0',
+                      borderBottom: '1px solid var(--color-border)',
+                    }}
+                  >
+                    <div>
+                      <span className="mono" style={{
+                        fontSize: 10, padding: '2px 8px',
+                        background: ca.status === 'PASS' ? 'rgba(90,200,120,0.12)' : ca.status === 'FAIL' ? 'rgba(239,90,90,0.12)' : 'rgba(242,209,86,0.10)',
+                        color: statusColor(ca.status),
+                        border: `1px solid ${statusColor(ca.status)}44`,
+                      }}>
+                        {ca.status}
+                      </span>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: 2 }}>
+                        {ca.control.id}: {ca.control.name}
+                      </div>
+                      <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', lineHeight: 1.5 }}>
+                        {ca.control.description}
+                      </div>
+                      {ca.findings.length > 0 && (
+                        <div className="mono" style={{ fontSize: 10, color: 'var(--color-sev-high)', marginTop: 4 }}>
+                          {ca.findings.length} finding{ca.findings.length > 1 ? 's' : ''}: {ca.findings.map(f => f.ruleName).slice(0, 3).join(', ')}
+                          {ca.findings.length > 3 && ` +${ca.findings.length - 3} more`}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <span className="mono" style={{
+                        fontSize: 9, color: 'var(--color-text-dim)',
+                        padding: '2px 6px', border: '1px solid var(--color-border)',
+                      }}>
+                        {ca.control.criticality}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
+
+          {/* Gap analysis summary */}
+          {results.length > 0 && (
+            <div className="bracket-card" style={{ padding: 20, marginTop: 16 }}>
+              <div className="mono" style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--color-sast)', textTransform: 'uppercase', marginBottom: 14 }}>
+                [ GAP ANALYSIS SUMMARY ]
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--color-scanner)' }}>
+                    {results.reduce((s, r) => s + r.passedControls, 0)}
+                  </div>
+                  <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 4 }}>Controls Passing</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--color-sev-critical)' }}>
+                    {results.reduce((s, r) => s + r.failedControls, 0)}
+                  </div>
+                  <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 4 }}>Controls Failing</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--color-sast)' }}>
+                    {Math.round(results.reduce((s, r) => s + r.score, 0) / Math.max(results.length, 1))}%
+                  </div>
+                  <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 4 }}>Avg. Score</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─── Custom Rules Panel ──────────────────────────────────────────────────────
+
+function CustomRulesPanel() {
+  const [rules, setRules]           = useState<{ id: string; name: string; pattern: string; category: string; severity: SastSeverity; enabled: boolean; description: string; owasp: string; cwe: string; remediation: string; testCases: { code: string; shouldMatch: boolean; label: string }[] }[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [showCreate, setShowCreate] = useState(false)
+  const [testCode, setTestCode]     = useState('')
+  const [testPattern, setTestPattern] = useState('')
+  const [testResult, setTestResult] = useState<{ matches: boolean; matchCount: number } | null>(null)
+  const [newRule, setNewRule]        = useState({
+    name: '', pattern: '', description: '', category: 'Injection', severity: 'MEDIUM' as SastSeverity,
+    owasp: 'A03:2021 – Injection', cwe: 'CWE-79', remediation: '',
+  })
+
+  useEffect(() => {
+    fetch('/api/sast/rules')
+      .then(r => r.json())
+      .then(d => { if (d.rules) setRules(d.rules); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  async function toggleRule(id: string, enabled: boolean) {
+    setRules(prev => prev.map(r => r.id === id ? { ...r, enabled } : r))
+    await fetch('/api/sast/rules', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, enabled }),
+    }).catch(() => {})
+  }
+
+  async function testPatternClick() {
+    if (!testPattern || !testCode) return
+    try {
+      const res = await fetch('/api/sast/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'test', pattern: testPattern, code: testCode }),
+      })
+      const data = await res.json()
+      setTestResult(data)
+    } catch { setTestResult(null) }
+  }
+
+  async function createRule() {
+    if (!newRule.name || !newRule.pattern) return
+    try {
+      const res = await fetch('/api/sast/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRule),
+      })
+      const data = await res.json()
+      if (data.rule) {
+        setRules(prev => [...prev, data.rule])
+        setShowCreate(false)
+        setNewRule({ name: '', pattern: '', description: '', category: 'Injection', severity: 'MEDIUM', owasp: 'A03:2021 – Injection', cwe: 'CWE-79', remediation: '' })
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function deleteRule(id: string) {
+    setRules(prev => prev.filter(r => r.id !== id))
+    await fetch('/api/sast/rules', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    }).catch(() => {})
+  }
+
+  if (loading) return (
+    <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)', padding: '20px 0', textAlign: 'center', marginTop: 20 }}>
+      Loading rules...
+    </div>
+  )
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      {/* Header */}
+      <div className="bracket-card" style={{ padding: 16, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div className="mono" style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--color-sast)', textTransform: 'uppercase' }}>
+              [ CUSTOM RULES — {rules.length} ]
+            </div>
+            <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 4 }}>
+              55 built-in rules + {rules.filter(r => r.enabled).length} custom rules active
+            </div>
+          </div>
+          <button
+            onClick={() => setShowCreate(!showCreate)}
+            className="mono"
+            style={{
+              padding: '8px 16px', fontSize: 10, cursor: 'pointer', letterSpacing: '0.1em',
+              background: showCreate ? 'var(--color-sast)' : 'var(--color-bg-elevated)',
+              border: `1px solid ${showCreate ? 'var(--color-sast)' : 'var(--color-border)'}`,
+              color: showCreate ? '#0a0d0f' : 'var(--color-sast)',
+              fontWeight: 600,
+            }}
+          >
+            {showCreate ? 'CANCEL' : '+ NEW RULE'}
+          </button>
+        </div>
+      </div>
+
+      {/* Create rule form */}
+      {showCreate && (
+        <div className="bracket-card" style={{ padding: 20, marginBottom: 16 }}>
+          <div className="mono" style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--color-sast)', textTransform: 'uppercase', marginBottom: 16 }}>
+            [ CREATE CUSTOM RULE ]
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', display: 'block', marginBottom: 4, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Rule Name</label>
+              <input value={newRule.name} onChange={e => setNewRule(p => ({ ...p, name: e.target.value }))} className="tac-input" style={{ display: 'block' }} placeholder="e.g. Detect eval() usage" />
+            </div>
+            <div>
+              <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', display: 'block', marginBottom: 4, letterSpacing: '0.1em', textTransform: 'uppercase' }}>CWE ID</label>
+              <input value={newRule.cwe} onChange={e => setNewRule(p => ({ ...p, cwe: e.target.value }))} className="tac-input" style={{ display: 'block' }} placeholder="CWE-79" />
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', display: 'block', marginBottom: 4, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Regex Pattern</label>
+            <input value={newRule.pattern} onChange={e => setNewRule(p => ({ ...p, pattern: e.target.value }))} className="tac-input" style={{ display: 'block', fontFamily: 'var(--font-mono)' }} placeholder="e.g. eval\\s*\\(" />
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', display: 'block', marginBottom: 4, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Description</label>
+            <textarea value={newRule.description} onChange={e => setNewRule(p => ({ ...p, description: e.target.value }))} style={{ width: '100%', height: 60, background: 'var(--color-bg-base)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)', fontSize: 11, padding: '8px 12px', resize: 'vertical', outline: 'none', boxSizing: 'border-box' }} placeholder="Describe what this rule detects..." />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', display: 'block', marginBottom: 4, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Severity</label>
+              <select value={newRule.severity} onChange={e => setNewRule(p => ({ ...p, severity: e.target.value as SastSeverity }))} style={{ width: '100%', background: 'var(--color-bg-base)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11, padding: '6px 10px', outline: 'none' }}>
+                {SEV_ORDER.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', display: 'block', marginBottom: 4, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Category</label>
+              <select value={newRule.category} onChange={e => setNewRule(p => ({ ...p, category: e.target.value }))} style={{ width: '100%', background: 'var(--color-bg-base)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11, padding: '6px 10px', outline: 'none' }}>
+                {['Injection', 'XSS', 'Secrets', 'Cryptography', 'Authentication', 'Authorization', 'Misconfiguration', 'Logging', 'Dependencies', 'Deserialization', 'Path Traversal', 'SSRF', 'XXE', 'Race Condition'].map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', display: 'block', marginBottom: 4, letterSpacing: '0.1em', textTransform: 'uppercase' }}>OWASP</label>
+              <select value={newRule.owasp} onChange={e => setNewRule(p => ({ ...p, owasp: e.target.value }))} style={{ width: '100%', background: 'var(--color-bg-base)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11, padding: '6px 10px', outline: 'none' }}>
+                {['A01:2021 – Broken Access Control', 'A02:2021 – Cryptographic Failures', 'A03:2021 – Injection', 'A04:2021 – Insecure Design', 'A05:2021 – Security Misconfiguration', 'A06:2021 – Vulnerable Components', 'A07:2021 – Auth Failures', 'A08:2021 – Software Integrity', 'A09:2021 – Logging Failures', 'A10:2021 – SSRF'].map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', display: 'block', marginBottom: 4, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Remediation</label>
+            <input value={newRule.remediation} onChange={e => setNewRule(p => ({ ...p, remediation: e.target.value }))} className="tac-input" style={{ display: 'block' }} placeholder="How to fix this issue..." />
+          </div>
+
+          <button
+            onClick={createRule}
+            disabled={!newRule.name || !newRule.pattern}
+            className="mono"
+            style={{
+              padding: '10px 24px', fontSize: 11, cursor: newRule.name && newRule.pattern ? 'pointer' : 'not-allowed',
+              background: newRule.name && newRule.pattern ? 'var(--color-sast)' : 'var(--color-bg-elevated)',
+              color: newRule.name && newRule.pattern ? '#0a0d0f' : 'var(--color-text-dim)',
+              border: 'none', fontWeight: 700, letterSpacing: '0.1em',
+            }}
+          >
+            CREATE RULE
+          </button>
+        </div>
+      )}
+
+      {/* Pattern tester */}
+      <div className="bracket-card" style={{ padding: 16, marginBottom: 16 }}>
+        <div className="mono" style={{ fontSize: 10, letterSpacing: '0.12em', color: 'var(--color-text-dim)', textTransform: 'uppercase', marginBottom: 10 }}>
+          Pattern Tester
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 10, alignItems: 'end' }}>
+          <div>
+            <div className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)', marginBottom: 4 }}>REGEX PATTERN</div>
+            <input value={testPattern} onChange={e => setTestPattern(e.target.value)} className="tac-input" style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 11 }} placeholder="e.g. eval\\s*\\(" />
+          </div>
+          <div>
+            <div className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)', marginBottom: 4 }}>TEST CODE</div>
+            <input value={testCode} onChange={e => setTestCode(e.target.value)} className="tac-input" style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 11 }} placeholder="e.g. eval(userInput)" />
+          </div>
+          <button onClick={testPatternClick} className="mono" style={{ padding: '8px 16px', fontSize: 10, cursor: 'pointer', background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border)', color: 'var(--color-sast)', letterSpacing: '0.1em', fontWeight: 600, whiteSpace: 'nowrap' }}>
+            TEST
+          </button>
+        </div>
+        {testResult && (
+          <div className="mono" style={{ fontSize: 10, marginTop: 8, padding: '6px 10px', background: testResult.matches ? 'rgba(90,200,120,0.08)' : 'rgba(239,90,90,0.08)', border: `1px solid ${testResult.matches ? 'var(--color-scanner)44' : 'var(--color-sev-critical)44'}`, color: testResult.matches ? 'var(--color-scanner)' : 'var(--color-sev-critical)' }}>
+            {testResult.matches ? `MATCH — ${testResult.matchCount} occurrence${testResult.matchCount > 1 ? 's' : ''} found` : 'NO MATCH'}
+          </div>
+        )}
+      </div>
+
+      {/* Rules list */}
+      <div className="bracket-card" style={{ padding: 20 }}>
+        <div className="mono" style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--color-sast)', textTransform: 'uppercase', marginBottom: 14 }}>
+          [ ACTIVE CUSTOM RULES ]
+        </div>
+        {rules.length === 0 ? (
+          <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)', textAlign: 'center', padding: '20px 0' }}>
+            No custom rules defined. Click &quot;+ NEW RULE&quot; to create one.
+          </div>
+        ) : (
+          <div>
+            {rules.map(rule => (
+              <div key={rule.id} style={{
+                display: 'grid', gridTemplateColumns: '40px 1fr auto',
+                gap: 12, alignItems: 'center', padding: '12px 0',
+                borderBottom: '1px solid var(--color-border)',
+                opacity: rule.enabled ? 1 : 0.5,
+              }}>
+                <button
+                  onClick={() => toggleRule(rule.id, !rule.enabled)}
+                  style={{
+                    width: 32, height: 18, cursor: 'pointer',
+                    background: rule.enabled ? 'var(--color-sast)' : 'var(--color-bg-elevated)',
+                    border: `1px solid ${rule.enabled ? 'var(--color-sast)' : 'var(--color-border)'}`,
+                    borderRadius: 9, position: 'relative', padding: 0,
+                  }}
+                >
+                  <div style={{
+                    width: 12, height: 12, borderRadius: '50%',
+                    background: rule.enabled ? '#0a0d0f' : 'var(--color-text-dim)',
+                    position: 'absolute', top: 2,
+                    left: rule.enabled ? 16 : 2,
+                    transition: 'left 0.15s',
+                  }} />
+                </button>
+
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>{rule.name}</span>
+                    <span className="mono" style={{ fontSize: 9, padding: '1px 6px', background: SEV_BG[rule.severity], color: SEV_COLOR[rule.severity], border: `1px solid ${SEV_COLOR[rule.severity]}44` }}>
+                      {rule.severity}
+                    </span>
+                    <span className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)', padding: '1px 6px', border: '1px solid var(--color-border)' }}>
+                      {rule.category}
+                    </span>
+                  </div>
+                  <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)' }}>
+                    {rule.id} · {rule.cwe} · Pattern: <span style={{ color: 'var(--color-sast)' }}>{rule.pattern.slice(0, 60)}{rule.pattern.length > 60 ? '...' : ''}</span>
+                  </div>
+                </div>
+
+                <button onClick={() => deleteRule(rule.id)} className="mono" style={{ padding: '4px 10px', fontSize: 10, cursor: 'pointer', background: 'none', border: '1px solid var(--color-border)', color: 'var(--color-text-dim)', letterSpacing: '0.06em' }}>
+                  DELETE
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Trends Dashboard ────────────────────────────────────────────────────────
+
+interface TrendData {
+  findingsOverTime: { date: string; critical: number; high: number; medium: number; low: number; info: number; total: number }[]
+  topVulnTypes: { name: string; count: number; severity: string; cwe: string }[]
+  severityDistribution: { critical: number; high: number; medium: number; low: number; info: number }
+  categoryBreakdown: { category: string; count: number }[]
+  summary: {
+    totalScans: number; totalFindings: number; avgFindingsPerScan: number
+    remediatedCount: number; falsePositiveCount: number; avgScanDuration: number
+    criticalOpen: number; highOpen: number
+  }
+}
+
+function TrendsDashboard() {
+  const [data, setData]       = useState<TrendData | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/sast/trends')
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  if (loading) return (
+    <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)', padding: '40px 0', textAlign: 'center', marginTop: 20 }}>
+      Loading analytics...
+    </div>
+  )
+
+  if (!data) return null
+
+  const maxDaily = Math.max(...data.findingsOverTime.map(d => d.total), 1)
+  const maxVuln = Math.max(...data.topVulnTypes.map(v => v.count), 1)
+  const maxCat = Math.max(...data.categoryBreakdown.map(c => c.count), 1)
+  const totalSev = data.severityDistribution.critical + data.severityDistribution.high + data.severityDistribution.medium + data.severityDistribution.low + data.severityDistribution.info || 1
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      {/* KPI cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+        {[
+          { label: 'TOTAL SCANS', value: data.summary.totalScans, color: 'var(--color-sast)' },
+          { label: 'TOTAL FINDINGS', value: data.summary.totalFindings, color: 'var(--color-text-primary)' },
+          { label: 'CRITICAL OPEN', value: data.summary.criticalOpen, color: 'var(--color-sev-critical)' },
+          { label: 'REMEDIATED', value: data.summary.remediatedCount, color: 'var(--color-scanner)' },
+        ].map(kpi => (
+          <div key={kpi.label} style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', padding: 16, textAlign: 'center' }}>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: '0.12em', color: 'var(--color-text-dim)', marginBottom: 6, textTransform: 'uppercase' }}>
+              {kpi.label}
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: kpi.color }}>
+              {kpi.value}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Secondary KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+        {[
+          { label: 'AVG FINDINGS/SCAN', value: data.summary.avgFindingsPerScan },
+          { label: 'FALSE POSITIVES', value: data.summary.falsePositiveCount },
+          { label: 'AVG SCAN TIME', value: `${data.summary.avgScanDuration}ms` },
+        ].map(kpi => (
+          <div key={kpi.label} style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', padding: 12, textAlign: 'center' }}>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: '0.12em', color: 'var(--color-text-dim)', marginBottom: 4, textTransform: 'uppercase' }}>
+              {kpi.label}
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--color-text-secondary)' }}>
+              {kpi.value}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Findings over time (bar chart) */}
+      <div className="bracket-card" style={{ padding: 20, marginBottom: 16 }}>
+        <div className="mono" style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--color-sast)', textTransform: 'uppercase', marginBottom: 16 }}>
+          [ FINDINGS OVER TIME — LAST 30 DAYS ]
+        </div>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 120 }}>
+          {data.findingsOverTime.map((d, i) => {
+            const cH = (d.critical / maxDaily) * 100
+            const hH = (d.high / maxDaily) * 100
+            const mH = (d.medium / maxDaily) * 100
+            const lH = ((d.low + d.info) / maxDaily) * 100
+            return (
+              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }} title={`${d.date}: C=${d.critical} H=${d.high} M=${d.medium} L=${d.low}`}>
+                {d.critical > 0 && <div style={{ height: `${cH}%`, background: 'var(--color-sev-critical)', minHeight: d.critical > 0 ? 2 : 0 }} />}
+                {d.high > 0 && <div style={{ height: `${hH}%`, background: 'var(--color-sev-high)', minHeight: d.high > 0 ? 2 : 0 }} />}
+                {d.medium > 0 && <div style={{ height: `${mH}%`, background: 'var(--color-sev-medium)', minHeight: d.medium > 0 ? 2 : 0 }} />}
+                {(d.low + d.info) > 0 && <div style={{ height: `${lH}%`, background: 'var(--color-sev-low)', minHeight: (d.low + d.info) > 0 ? 2 : 0 }} />}
+                {d.total === 0 && <div style={{ height: 1, background: 'var(--color-border)' }} />}
+              </div>
+            )
+          })}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
+          <span className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)' }}>
+            {data.findingsOverTime[0]?.date}
+          </span>
+          <span className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)' }}>
+            {data.findingsOverTime[data.findingsOverTime.length - 1]?.date}
+          </span>
+        </div>
+        {/* Legend */}
+        <div style={{ display: 'flex', gap: 16, marginTop: 10, justifyContent: 'center' }}>
+          {[
+            { label: 'Critical', color: 'var(--color-sev-critical)' },
+            { label: 'High', color: 'var(--color-sev-high)' },
+            { label: 'Medium', color: 'var(--color-sev-medium)' },
+            { label: 'Low/Info', color: 'var(--color-sev-low)' },
+          ].map(l => (
+            <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ width: 8, height: 8, background: l.color }} />
+              <span className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)' }}>{l.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+        {/* Severity distribution */}
+        <div className="bracket-card" style={{ padding: 20 }}>
+          <div className="mono" style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--color-sast)', textTransform: 'uppercase', marginBottom: 14 }}>
+            [ SEVERITY DISTRIBUTION ]
+          </div>
+          {(['critical', 'high', 'medium', 'low', 'info'] as const).map(sev => {
+            const count = data.severityDistribution[sev]
+            const pct = Math.round((count / totalSev) * 100)
+            return (
+              <div key={sev} style={{ marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                  <span className="mono" style={{ fontSize: 10, color: SEV_COLOR[sev.toUpperCase() as SastSeverity], textTransform: 'uppercase' }}>{sev}</span>
+                  <span className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)' }}>{count} ({pct}%)</span>
+                </div>
+                <div style={{ height: 6, background: 'var(--color-bg-base)' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: SEV_COLOR[sev.toUpperCase() as SastSeverity], transition: 'width 0.3s' }} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Category breakdown */}
+        <div className="bracket-card" style={{ padding: 20 }}>
+          <div className="mono" style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--color-sast)', textTransform: 'uppercase', marginBottom: 14 }}>
+            [ CATEGORY BREAKDOWN ]
+          </div>
+          {data.categoryBreakdown.slice(0, 8).map(cat => (
+            <div key={cat.category} style={{ marginBottom: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                <span className="mono" style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>{cat.category}</span>
+                <span className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)' }}>{cat.count}</span>
+              </div>
+              <div style={{ height: 6, background: 'var(--color-bg-base)' }}>
+                <div style={{ height: '100%', width: `${(cat.count / maxCat) * 100}%`, background: 'var(--color-sast)', opacity: 0.6, transition: 'width 0.3s' }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Top vulnerability types */}
+      <div className="bracket-card" style={{ padding: 20 }}>
+        <div className="mono" style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--color-sast)', textTransform: 'uppercase', marginBottom: 14 }}>
+          [ TOP VULNERABILITY TYPES ]
+        </div>
+        {data.topVulnTypes.map((v, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '24px 1fr 60px 80px', gap: 10, alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--color-border)' }}>
+            <span className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', textAlign: 'right' }}>#{i + 1}</span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 12, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.name}</div>
+              <div style={{ height: 3, background: 'var(--color-bg-base)', marginTop: 4 }}>
+                <div style={{ height: '100%', width: `${(v.count / maxVuln) * 100}%`, background: SEV_COLOR[v.severity as SastSeverity] || 'var(--color-sast)' }} />
+              </div>
+            </div>
+            <span className="mono" style={{ fontSize: 10, color: SEV_COLOR[v.severity as SastSeverity] || 'var(--color-text-dim)', textAlign: 'right' }}>{v.severity}</span>
+            <span className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', textAlign: 'right' }}>{v.count} hits · {v.cwe}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Report Panel ────────────────────────────────────────────────────────────
+
+interface ReportData {
+  title: string
+  generatedAt: string
+  scanInfo: { scanId: string; scanName: string; language: string; filesScanned: number; linesOfCode: number; duration: number }
+  riskScore: { overall: number; grade: string; breakdown: Record<string, number> }
+  executiveSummary: string
+  topRisks: { rank: number; finding: string; severity: string; category: string; cwe: string; impact: string; remediation: string; effort: string }[]
+  remediationPlan: { priority: number; category: string; action: string; findingCount: number; effort: string; impact: string }[]
+  compliance?: { framework: string; score: number; status: string; failedControls: number }[]
+}
+
+function ReportPanel({ scanResult }: { scanResult: SastScanResult | null }) {
+  const [report, setReport]     = useState<ReportData | null>(null)
+  const [loading, setLoading]   = useState(false)
+  const [inclCompliance, setInclCompliance] = useState(true)
+
+  async function generateReport() {
+    if (!scanResult) return
+    setLoading(true)
+    try {
+      const res = await fetch('/api/sast/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scan: scanResult, includeCompliance: inclCompliance }),
+      })
+      const data = await res.json()
+      if (data.report) setReport(data.report)
+    } catch { /* ignore */ }
+    setLoading(false)
+  }
+
+  const gradeColor = (g: string) =>
+    g === 'A' ? 'var(--color-scanner)' : g === 'B' ? 'var(--color-sev-low)' : g === 'C' ? 'var(--color-sev-medium)' : g === 'D' ? 'var(--color-sev-high)' : 'var(--color-sev-critical)'
+
+  const effortColor = (e: string) =>
+    e === 'LOW' ? 'var(--color-scanner)' : e === 'MEDIUM' ? 'var(--color-sev-medium)' : 'var(--color-sev-high)'
+
+  if (!scanResult) {
+    return (
+      <div className="bracket-card" style={{ padding: 40, textAlign: 'center', marginTop: 20 }}>
+        <div style={{ fontSize: 36, color: 'var(--color-text-dim)', marginBottom: 12 }}>◈</div>
+        <div className="mono" style={{ fontSize: 12, color: 'var(--color-text-dim)', letterSpacing: '0.08em' }}>
+          Run a SAST scan first to generate an executive security report.
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      {/* Generate button */}
+      {!report && (
+        <div className="bracket-card" style={{ padding: 24, textAlign: 'center' }}>
+          <div className="mono" style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--color-sast)', textTransform: 'uppercase', marginBottom: 16 }}>
+            [ EXECUTIVE SECURITY REPORT ]
+          </div>
+          <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)', marginBottom: 16 }}>
+            Generate a comprehensive security assessment report with risk scoring, remediation priorities, and compliance mapping.
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 12, alignItems: 'center', marginBottom: 16 }}>
+            <button
+              onClick={() => setInclCompliance(!inclCompliance)}
+              className="mono"
+              style={{
+                padding: '6px 14px', fontSize: 10, cursor: 'pointer',
+                background: inclCompliance ? 'var(--color-sast)18' : 'var(--color-bg-elevated)',
+                border: `1px solid ${inclCompliance ? 'var(--color-sast)' : 'var(--color-border)'}`,
+                color: inclCompliance ? 'var(--color-sast)' : 'var(--color-text-dim)',
+              }}
+            >
+              {inclCompliance ? '◉ Include Compliance' : '○ Include Compliance'}
+            </button>
+          </div>
+          <button
+            onClick={generateReport}
+            disabled={loading}
+            className="mono"
+            style={{
+              padding: '12px 32px', fontSize: 12, cursor: loading ? 'not-allowed' : 'pointer',
+              background: loading ? 'var(--color-bg-elevated)' : 'var(--color-sast)',
+              color: loading ? 'var(--color-text-dim)' : '#0a0d0f',
+              border: 'none', fontWeight: 700, letterSpacing: '0.12em',
+            }}
+          >
+            {loading ? 'GENERATING...' : 'GENERATE REPORT'}
+          </button>
+        </div>
+      )}
+
+      {/* Report content */}
+      {report && (
+        <div>
+          {/* Report header */}
+          <div className="bracket-card" style={{ padding: 24, marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+              <div>
+                <div className="mono" style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--color-sast)', textTransform: 'uppercase', marginBottom: 8 }}>
+                  [ EXECUTIVE SECURITY REPORT ]
+                </div>
+                <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-text-primary)', margin: 0, marginBottom: 8 }}>
+                  {report.title}
+                </h2>
+                <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)' }}>
+                  Generated: {new Date(report.generatedAt).toLocaleString()} · {report.scanInfo.language} · {report.scanInfo.filesScanned} files · {report.scanInfo.linesOfCode.toLocaleString()} LOC
+                </div>
+              </div>
+
+              {/* Risk grade */}
+              <div style={{ textAlign: 'center', padding: '8px 20px', border: `2px solid ${gradeColor(report.riskScore.grade)}`, minWidth: 80 }}>
+                <div style={{ fontSize: 42, fontWeight: 800, color: gradeColor(report.riskScore.grade), lineHeight: 1 }}>
+                  {report.riskScore.grade}
+                </div>
+                <div className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)', marginTop: 4 }}>
+                  RISK: {report.riskScore.overall}/100
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Executive summary */}
+          <div className="bracket-card" style={{ padding: 20, marginBottom: 16 }}>
+            <div className="mono" style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--color-sast)', textTransform: 'uppercase', marginBottom: 10 }}>
+              [ EXECUTIVE SUMMARY ]
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7, margin: 0 }}>
+              {report.executiveSummary}
+            </p>
+          </div>
+
+          {/* Risk breakdown */}
+          <div className="bracket-card" style={{ padding: 20, marginBottom: 16 }}>
+            <div className="mono" style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--color-sast)', textTransform: 'uppercase', marginBottom: 14 }}>
+              [ RISK BREAKDOWN BY CATEGORY ]
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+              {Object.entries(report.riskScore.breakdown).map(([cat, score]) => (
+                <div key={cat} style={{ padding: 12, background: 'var(--color-bg-base)', border: '1px solid var(--color-border)' }}>
+                  <div className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>{cat}</div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                    <span style={{ fontSize: 22, fontWeight: 700, color: score > 60 ? 'var(--color-sev-critical)' : score > 30 ? 'var(--color-sev-medium)' : 'var(--color-scanner)' }}>{score}</span>
+                    <span className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)' }}>/100</span>
+                  </div>
+                  <div style={{ height: 4, background: 'var(--color-bg-elevated)', marginTop: 6 }}>
+                    <div style={{ height: '100%', width: `${score}%`, background: score > 60 ? 'var(--color-sev-critical)' : score > 30 ? 'var(--color-sev-medium)' : 'var(--color-scanner)' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Top risks */}
+          <div className="bracket-card" style={{ padding: 20, marginBottom: 16 }}>
+            <div className="mono" style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--color-sast)', textTransform: 'uppercase', marginBottom: 14 }}>
+              [ TOP 5 SECURITY RISKS ]
+            </div>
+            {report.topRisks.map(risk => (
+              <div key={risk.rank} style={{ padding: '14px 0', borderBottom: '1px solid var(--color-border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                  <span className="mono" style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-text-dim)', width: 24 }}>
+                    {risk.rank}
+                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)', flex: 1 }}>
+                    {risk.finding}
+                  </span>
+                  <span className="mono" style={{ fontSize: 9, padding: '2px 8px', background: SEV_BG[risk.severity as SastSeverity], color: SEV_COLOR[risk.severity as SastSeverity], border: `1px solid ${SEV_COLOR[risk.severity as SastSeverity]}44` }}>
+                    {risk.severity}
+                  </span>
+                  <span className="mono" style={{ fontSize: 9, color: effortColor(risk.effort), padding: '2px 8px', border: `1px solid ${effortColor(risk.effort)}44` }}>
+                    {risk.effort} EFFORT
+                  </span>
+                </div>
+                <div style={{ marginLeft: 34 }}>
+                  <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginBottom: 4, lineHeight: 1.5 }}>
+                    <strong style={{ color: 'var(--color-text-secondary)' }}>Impact:</strong> {risk.impact}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--color-text-dim)', lineHeight: 1.5 }}>
+                    <strong style={{ color: 'var(--color-text-secondary)' }}>Fix:</strong> {risk.remediation}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Remediation plan */}
+          <div className="bracket-card" style={{ padding: 20, marginBottom: 16 }}>
+            <div className="mono" style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--color-sast)', textTransform: 'uppercase', marginBottom: 14 }}>
+              [ REMEDIATION ROADMAP ]
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 80px 80px 80px', gap: 8, alignItems: 'center', padding: '8px 0', borderBottom: '2px solid var(--color-border)' }}>
+              <span className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)' }}>PRI</span>
+              <span className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)' }}>ACTION</span>
+              <span className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)', textAlign: 'center' }}>FINDINGS</span>
+              <span className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)', textAlign: 'center' }}>EFFORT</span>
+              <span className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)', textAlign: 'center' }}>IMPACT</span>
+            </div>
+            {report.remediationPlan.map((item, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '40px 1fr 80px 80px 80px', gap: 8, alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--color-border)' }}>
+                <span className="mono" style={{ fontSize: 14, fontWeight: 700, color: item.priority === 1 ? 'var(--color-sev-critical)' : item.priority === 2 ? 'var(--color-sev-high)' : 'var(--color-sev-medium)', textAlign: 'center' }}>
+                  P{item.priority}
+                </span>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: 2 }}>{item.category}</div>
+                  <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', lineHeight: 1.4 }}>{item.action}</div>
+                </div>
+                <span className="mono" style={{ fontSize: 11, color: 'var(--color-text-secondary)', textAlign: 'center' }}>{item.findingCount}</span>
+                <span className="mono" style={{ fontSize: 10, color: effortColor(item.effort), textAlign: 'center' }}>{item.effort}</span>
+                <span className="mono" style={{ fontSize: 10, color: item.impact === 'CRITICAL' ? 'var(--color-sev-critical)' : item.impact === 'HIGH' ? 'var(--color-sev-high)' : 'var(--color-sev-medium)', textAlign: 'center' }}>{item.impact}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Compliance summary (if included) */}
+          {report.compliance && report.compliance.length > 0 && (
+            <div className="bracket-card" style={{ padding: 20, marginBottom: 16 }}>
+              <div className="mono" style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--color-sast)', textTransform: 'uppercase', marginBottom: 14 }}>
+                [ COMPLIANCE POSTURE ]
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
+                {report.compliance.map(c => (
+                  <div key={c.framework} style={{ padding: 14, background: 'var(--color-bg-base)', border: '1px solid var(--color-border)' }}>
+                    <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', marginBottom: 6, letterSpacing: '0.06em' }}>{c.framework}</div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                      <span style={{ fontSize: 24, fontWeight: 700, color: c.score >= 80 ? 'var(--color-scanner)' : c.score >= 50 ? 'var(--color-sev-medium)' : 'var(--color-sev-critical)' }}>
+                        {c.score}%
+                      </span>
+                      <span className="mono" style={{ fontSize: 9, padding: '1px 6px', color: c.status === 'PASS' ? 'var(--color-scanner)' : c.status === 'FAIL' ? 'var(--color-sev-critical)' : 'var(--color-sev-medium)', border: `1px solid ${c.status === 'PASS' ? 'var(--color-scanner)44' : c.status === 'FAIL' ? 'var(--color-sev-critical)44' : 'var(--color-sev-medium)44'}` }}>
+                        {c.status}
+                      </span>
+                    </div>
+                    {c.failedControls > 0 && (
+                      <div className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)', marginTop: 4 }}>
+                        {c.failedControls} controls need attention
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Regenerate button */}
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 8 }}>
+            <button onClick={generateReport} className="mono" style={{ padding: '8px 20px', fontSize: 10, cursor: 'pointer', background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border)', color: 'var(--color-sast)', letterSpacing: '0.1em' }}>
+              REGENERATE
+            </button>
+            <button onClick={() => setReport(null)} className="mono" style={{ padding: '8px 20px', fontSize: 10, cursor: 'pointer', background: 'none', border: '1px solid var(--color-border)', color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>
+              CLOSE
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function SastPage() {
   const [tab, setTab]           = useState<'paste' | 'demo' | 'multifile'>('demo')
-  const [panel, setPanel]       = useState<'scan' | 'history' | 'cicd'>('scan')
+  const [panel, setPanel]       = useState<'scan' | 'history' | 'cicd' | 'compliance' | 'rules' | 'trends' | 'report'>('scan')
   const [scanName, setScanName] = useState('My Code Review')
   const [code, setCode]         = useState('')
   const [filePath, setFilePath] = useState('src/index.js')
@@ -986,7 +2026,7 @@ export default function SastPage() {
           SAST Scanner
         </h1>
         <p style={{ fontSize: 14, color: 'var(--color-text-secondary)', margin: 0 }}>
-          55 rules · OWASP Top 10 · 8 languages · CWE mapped · Secret detection · SCA dependency scanning
+          67 rules (55 regex + 12 AST) · OWASP Top 10 · 8 languages · CWE mapped · Secret detection · SCA · AI enrichment
         </p>
       </div>
 
@@ -994,8 +2034,12 @@ export default function SastPage() {
       <div style={{ display: 'flex', gap: 0, marginBottom: 0, borderBottom: '1px solid var(--color-border)' }}>
         {([
           { id: 'scan', label: 'SCANNER' },
-          { id: 'history', label: 'SCAN HISTORY' },
+          { id: 'history', label: 'HISTORY' },
+          { id: 'compliance', label: 'COMPLIANCE' },
+          { id: 'trends', label: 'TRENDS' },
+          { id: 'rules', label: 'RULES' },
           { id: 'cicd', label: 'CI/CD' },
+          { id: 'report', label: 'REPORT' },
         ] as const).map(p => (
           <button
             key={p.id}
@@ -1030,6 +2074,26 @@ export default function SastPage() {
         <div style={{ marginTop: 20 }}>
           <CiCdPanel />
         </div>
+      )}
+
+      {/* Panel: Compliance */}
+      {panel === 'compliance' && (
+        <CompliancePanel findings={result?.findings ?? []} />
+      )}
+
+      {/* Panel: Custom Rules */}
+      {panel === 'rules' && (
+        <CustomRulesPanel />
+      )}
+
+      {/* Panel: Trends */}
+      {panel === 'trends' && (
+        <TrendsDashboard />
+      )}
+
+      {/* Panel: Report */}
+      {panel === 'report' && (
+        <ReportPanel scanResult={result} />
       )}
 
       {/* Panel: Scanner */}
@@ -1333,7 +2397,7 @@ export default function SastPage() {
                   ['Files',      String(result.filesScanned)],
                   ['Lines',      result.linesOfCode.toLocaleString()],
                   ['Duration',   `${result.duration}ms`],
-                  ['Rules Run',  '55 + 18 secrets + SCA'],
+                  ['Rules Run',  '55 regex + 12 AST + 18 secrets + SCA'],
                 ].map(([k, v]) => (
                   <div key={k} className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)' }}>
                     {k}: <span style={{ color: 'var(--color-text-secondary)' }}>{v}</span>

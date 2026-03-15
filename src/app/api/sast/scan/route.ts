@@ -4,6 +4,8 @@ import { runSastScan } from '@/lib/sast/scanner'
 import { SECRET_PATTERNS } from '@/lib/sast/secret-detector'
 import { detectLanguage } from '@/lib/sast/language-detector'
 import { scanDependencies, isDependencyManifest } from '@/lib/sast/dependency-scanner'
+import { scanForHighEntropy } from '@/lib/sast/entropy-scanner'
+import { scanWithAST } from '@/lib/sast/ast-engine'
 import { verifyAccessToken, ACCESS_COOKIE } from '@/lib/auth/jwt'
 import { prisma, isDatabaseReachable } from '@/lib/db'
 import type { SastScanRequest, SastFindingResult } from '@/lib/types/sast'
@@ -113,11 +115,35 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Run entropy-based secret detection ───────────────────────────────────
+    const entropyFindings: SastFindingResult[] = []
+    for (const file of body.files) {
+      if (!isDependencyManifest(file.path)) {
+        entropyFindings.push(...scanForHighEntropy(scanId, file.path, file.content))
+      }
+    }
+
+    // ── Run AST-based analysis (JS/TS files) ─────────────────────────────────
+    const astFindings: SastFindingResult[] = []
+    for (const file of body.files) {
+      if (!isDependencyManifest(file.path)) {
+        try {
+          astFindings.push(...scanWithAST(scanId, file.path, file.content))
+        } catch {
+          // AST parsing may fail on some files — regex rules will still catch issues
+        }
+      }
+    }
+
     // ── Run SAST rule scanner ───────────────────────────────────────────────
     const scanResult = runSastScan(scanId, body.name, body.files)
 
-    // Merge all findings: secrets + SCA + SAST rules
-    const mergedFindings = [...secretFindings, ...depFindings, ...scanResult.findings]
+    // Deduplicate AST findings against regex findings (same line + same CWE = duplicate)
+    const regexKeys = new Set(scanResult.findings.map(f => `${f.filePath}:${f.lineStart}:${f.cwe}`))
+    const uniqueAstFindings = astFindings.filter(f => !regexKeys.has(`${f.filePath}:${f.lineStart}:${f.cwe}`))
+
+    // Merge all findings: secrets + entropy + SCA + AST + SAST regex rules
+    const mergedFindings = [...secretFindings, ...entropyFindings, ...depFindings, ...uniqueAstFindings, ...scanResult.findings]
     const summary = {
       critical: mergedFindings.filter(f => f.severity === 'CRITICAL').length,
       high:     mergedFindings.filter(f => f.severity === 'HIGH').length,
