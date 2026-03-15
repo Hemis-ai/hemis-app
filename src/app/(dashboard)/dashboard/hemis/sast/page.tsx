@@ -1625,11 +1625,13 @@ interface ReportData {
 function ReportPanel({ scanResult }: { scanResult: SastScanResult | null }) {
   const [report, setReport]     = useState<ReportData | null>(null)
   const [loading, setLoading]   = useState(false)
+  const [reportError, setReportError] = useState('')
   const [inclCompliance, setInclCompliance] = useState(true)
 
   async function generateReport() {
     if (!scanResult) return
     setLoading(true)
+    setReportError('')
     try {
       const res = await fetch('/api/sast/report', {
         method: 'POST',
@@ -1637,8 +1639,10 @@ function ReportPanel({ scanResult }: { scanResult: SastScanResult | null }) {
         body: JSON.stringify({ scan: scanResult, includeCompliance: inclCompliance }),
       })
       const data = await res.json()
+      if (!res.ok) { setReportError(data.error ?? 'Report generation failed'); return }
       if (data.report) setReport(data.report)
-    } catch { /* ignore */ }
+      else setReportError('No report data returned')
+    } catch (e) { setReportError('Network error generating report') }
     setLoading(false)
   }
 
@@ -1697,6 +1701,11 @@ function ReportPanel({ scanResult }: { scanResult: SastScanResult | null }) {
           >
             {loading ? 'GENERATING...' : 'GENERATE REPORT'}
           </button>
+          {reportError && (
+            <div className="mono" style={{ marginTop: 12, fontSize: 11, color: 'var(--color-sev-critical)' }}>
+              {reportError}
+            </div>
+          )}
         </div>
       )}
 
@@ -1859,13 +1868,18 @@ function ReportPanel({ scanResult }: { scanResult: SastScanResult | null }) {
             <button
               onClick={async () => {
                 if (!scanResult) return
+                setReportError('')
                 try {
                   const res = await fetch('/api/sast/report/pdf', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ scan: scanResult, includeCompliance: inclCompliance }),
                   })
-                  if (!res.ok) throw new Error('PDF generation failed')
+                  if (!res.ok) {
+                    const errData = await res.json().catch(() => ({ error: 'PDF generation failed' }))
+                    setReportError(errData.error ?? 'PDF generation failed')
+                    return
+                  }
                   const blob = await res.blob()
                   const url = URL.createObjectURL(blob)
                   const a = document.createElement('a')
@@ -1875,7 +1889,7 @@ function ReportPanel({ scanResult }: { scanResult: SastScanResult | null }) {
                   a.click()
                   document.body.removeChild(a)
                   URL.revokeObjectURL(url)
-                } catch (e) { console.error('PDF download failed:', e) }
+                } catch (e) { setReportError('PDF download failed — check console for details'); console.error('PDF download failed:', e) }
               }}
               className="mono"
               style={{ padding: '8px 20px', fontSize: 10, cursor: 'pointer', background: 'var(--color-sast)', border: 'none', color: '#0a0d0f', fontWeight: 700, letterSpacing: '0.1em' }}
@@ -1886,6 +1900,11 @@ function ReportPanel({ scanResult }: { scanResult: SastScanResult | null }) {
               CLOSE
             </button>
           </div>
+          {reportError && (
+            <div className="mono" style={{ marginTop: 12, textAlign: 'center', fontSize: 11, color: 'var(--color-sev-critical)' }}>
+              {reportError}
+            </div>
+          )}
         </div>
       )}
     </div>
