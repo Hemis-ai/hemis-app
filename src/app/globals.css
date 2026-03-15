@@ -131,7 +131,7 @@ body {
 .scan-line.purple { background:linear-gradient(90deg,transparent,var(--color-dast),transparent); }
 
 /* ── Terminal ── */
-.terminal { background:#060c14; border:1px solid var(--color-border); font-family:var(--font-mono); font-size:12px; color:#a8bcd4; overflow-y:auto; }
+.terminal { background:#0c1420; border:1px solid var(--color-border); font-family:var(--font-mono); font-size:13px; color:var(--color-text-secondary); overflow-y:auto; }
 .terminal-success { color:var(--color-scanner); }
 .terminal-warn    { color:var(--color-hemis-orange); }
 .terminal-error   { color:var(--color-hemis); }
@@ -143,7 +143,7 @@ body {
 .display { font-family:var(--font-display); }
 
 /* ── Category label tag ── */
-.label-tag { font-family:var(--font-mono); font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; padding:2px 7px; border:1px solid; }
+.label-tag { font-family:var(--font-mono); font-size:11px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; padding:3px 8px; border:1px solid; }
 .sev-critical { color:var(--color-critical); border-color:var(--color-critical); background:rgba(232,69,69,0.10); }
 .sev-high     { color:var(--color-high);    border-color:var(--color-high);    background:rgba(232,114,64,0.10); }
 .sev-medium   { color:var(--color-medium);  border-color:var(--color-medium);  background:rgba(239,200,74,0.10); }

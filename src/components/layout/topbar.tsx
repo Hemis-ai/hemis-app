@@ -1,5 +1,7 @@
 'use client'
 
+import { useState } from 'react'
+import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useTheme } from '@/components/layout/theme-provider'
 
@@ -11,10 +13,42 @@ const PAGE_META: Record<string, { title: string; product: string; color: string;
   '/dashboard/dast':      { title:'DAST',          product:'Web App Security', color:'var(--color-dast)',     breadcrumb:'/ dast'            },
 }
 
+const PRODUCT_TOOLS = {
+  hemis: [
+    { href:'/dashboard/hemis', label:'SAST', icon:'⬡' },
+    { href:'/dashboard/hemis/scanner', label:'DAST', icon:'◈' },
+    { href:'/dashboard/hemis/payloads', label:'WHITE BOX RED TEAMING', icon:'◉' },
+    { href:'/dashboard/hemis/findings', label:'BLACK BOX RED TEAMING', icon:'◌' },
+    { href:'/dashboard/hemis/engagements', label:'FINDINGS ENGINE', icon:'▦' },
+    { href:'/dashboard/hemis/reports', label:'REPORT GENERATOR', icon:'▤' },
+  ],
+  scanner: [
+    { href:'/dashboard/scanner', label:'CLOUD SCAN', icon:'◈' },
+    { href:'/dashboard/scanner', label:'COMPLIANCE', icon:'▤' },
+    { href:'/dashboard/scanner', label:'INVENTORY', icon:'◌' },
+  ],
+  blueteam: [
+    { href:'/dashboard/blueteam', label:'ALERTS', icon:'◎' },
+    { href:'/dashboard/blueteam', label:'DETECTION RULES', icon:'▦' },
+    { href:'/dashboard/blueteam', label:'PLAYBOOKS', icon:'◌' },
+  ],
+}
+
+const PRODUCTS = [
+  { id: 'scanner', label: 'CLOUD SCANNER', color: 'var(--color-scanner)' },
+  { id: 'hemis', label: 'HEMIS', color: 'var(--color-hemis)' },
+  { id: 'blueteam', label: 'BLUE TEAM', color: 'var(--color-blueteam)' },
+]
+
 export default function Topbar() {
   const path = usePathname()
   const { theme, toggle } = useTheme()
   const meta = PAGE_META[path] ?? PAGE_META['/dashboard']
+  const [showToolsDropdown, setShowToolsDropdown] = useState(false)
+
+  // Determine active product
+  const activeProduct = PRODUCTS.find(p => path.startsWith(`/dashboard/${p.id}`))
+  const tools = activeProduct ? PRODUCT_TOOLS[activeProduct.id as keyof typeof PRODUCT_TOOLS] : []
 
   return (
     <header style={{

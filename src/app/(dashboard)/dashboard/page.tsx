@@ -80,13 +80,13 @@ export default function DashboardPage() {
 
       {/* Page header */}
       <div style={{ marginBottom:28 }}>
-        <div className="mono" style={{ fontSize:10, letterSpacing:'0.15em', color:'var(--color-yellow)', textTransform:'uppercase', marginBottom:6 }}>
+        <div className="mono" style={{ fontSize:11, letterSpacing:'0.15em', color:'var(--color-yellow)', textTransform:'uppercase', marginBottom:6 }}>
           [ COMMAND CENTER ]
         </div>
-        <h1 className="display" style={{ fontSize:22, fontWeight:700, color:'var(--color-text-primary)', margin:0, letterSpacing:'-0.02em' }}>
+        <h1 className="display" style={{ fontSize:24, fontWeight:700, color:'var(--color-text-primary)', margin:0, letterSpacing:'-0.02em' }}>
           Security Overview
         </h1>
-        <p style={{ color:'var(--color-text-secondary)', margin:'4px 0 0', fontSize:13 }}>
+        <p style={{ color:'var(--color-text-secondary)', margin:'4px 0 0', fontSize:14 }}>
           Acme Corp · AWS account 482910 · us-east-1, us-west-2
         </p>
       </div>
@@ -103,12 +103,12 @@ export default function DashboardPage() {
           <span className="mono" style={{ fontSize:11, fontWeight:600, color:'var(--color-hemis)', letterSpacing:'0.1em', textTransform:'uppercase' }}>
             CRITICAL RISK DETECTED
           </span>
-          <span style={{ fontSize:12, color:'var(--color-text-secondary)', marginLeft:12 }}>
+          <span style={{ fontSize:13, color:'var(--color-text-secondary)', marginLeft:12 }}>
             3 critical findings require immediate attention — unauthorized access attempt in progress
           </span>
         </div>
         <Link href="/dashboard/blueteam" style={{ textDecoration:'none' }}>
-          <span className="mono" style={{ fontSize:10, color:'var(--color-hemis)', letterSpacing:'0.1em', border:'1px solid var(--color-hemis)', padding:'4px 10px', cursor:'pointer' }}>
+          <span className="mono" style={{ fontSize:11, color:'var(--color-hemis)', letterSpacing:'0.1em', border:'1px solid var(--color-hemis)', padding:'5px 12px', cursor:'pointer' }}>
             VIEW ALERTS →
           </span>
         </Link>
@@ -127,18 +127,18 @@ export default function DashboardPage() {
                 <div>
                   <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:4 }}>
                     <span style={{ fontSize:14, color:p.color }}>{p.icon}</span>
-                    <span className="mono" style={{ fontSize:10, fontWeight:600, letterSpacing:'0.14em', color:p.color, textTransform:'uppercase' }}>
+                    <span className="mono" style={{ fontSize:11, fontWeight:600, letterSpacing:'0.14em', color:p.color, textTransform:'uppercase' }}>
                       {p.label}
                     </span>
                   </div>
-                  <div style={{ fontSize:11, color:'var(--color-text-dim)' }}>{p.desc}</div>
+                  <div style={{ fontSize:12, color:'var(--color-text-secondary)' }}>{p.desc}</div>
                 </div>
                 <div style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0 }}>
                   {p.statusLive
                     ? <span className="dot-live" style={{ width:5, height:5, background:p.color, boxShadow:`0 0 4px ${p.color}` }} />
                     : <span style={{ width:5, height:5, borderRadius:'50%', background:'var(--color-text-dim)', display:'inline-block' }} />
                   }
-                  <span className="mono" style={{ fontSize:8, letterSpacing:'0.1em', color:'var(--color-text-dim)', textTransform:'uppercase' }}>
+                  <span className="mono" style={{ fontSize:10, letterSpacing:'0.1em', color:'var(--color-text-secondary)', textTransform:'uppercase' }}>
                     {p.status}
                   </span>
                 </div>
@@ -152,10 +152,10 @@ export default function DashboardPage() {
                     border:`1px solid ${s.alert ? p.color + '40' : 'var(--color-border)'}`,
                     padding:'8px 10px',
                   }}>
-                    <div className="mono" style={{ fontSize:8, letterSpacing:'0.1em', color:'var(--color-text-dim)', textTransform:'uppercase', marginBottom:3 }}>
+                    <div className="mono" style={{ fontSize:10, letterSpacing:'0.1em', color:'var(--color-text-secondary)', textTransform:'uppercase', marginBottom:3 }}>
                       {s.label}
                     </div>
-                    <div className="mono" style={{ fontSize:14, fontWeight:600, color: s.alert ? p.color : 'var(--color-text-primary)' }}>
+                    <div className="mono" style={{ fontSize:15, fontWeight:600, color: s.alert ? p.color : 'var(--color-text-primary)' }}>
                       {s.value}
                     </div>
                   </div>
@@ -168,7 +168,7 @@ export default function DashboardPage() {
                 paddingTop:12,
                 display:'flex', justifyContent:'flex-end',
               }}>
-                <span className="mono" style={{ fontSize:10, letterSpacing:'0.1em', color:p.color, textTransform:'uppercase' }}>
+                <span className="mono" style={{ fontSize:11, letterSpacing:'0.1em', color:p.color, textTransform:'uppercase' }}>
                   {p.cta}
                 </span>
               </div>
@@ -184,7 +184,7 @@ export default function DashboardPage() {
         <div className="bracket-card" style={{ padding:'20px' }}>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
             <div>
-              <span className="mono" style={{ fontSize:9, letterSpacing:'0.15em', color:'var(--color-text-dim)', textTransform:'uppercase' }}>
+              <span className="mono" style={{ fontSize:11, letterSpacing:'0.15em', color:'var(--color-text-secondary)', textTransform:'uppercase' }}>
                 RECENT EVENTS
               </span>
             </div>
@@ -196,17 +196,17 @@ export default function DashboardPage() {
                 display:'flex', alignItems:'flex-start', gap:12, padding:'9px 0',
                 borderBottom: i < RECENT_EVENTS.length-1 ? '1px solid var(--color-border)' : 'none',
               }}>
-                <span className="mono" style={{ fontSize:10, color:'var(--color-text-dim)', flexShrink:0, letterSpacing:'0.04em' }}>
+                <span className="mono" style={{ fontSize:11, color:'var(--color-text-secondary)', flexShrink:0, letterSpacing:'0.04em' }}>
                   {ev.time}
                 </span>
                 <span className="label-tag" style={{
-                  fontSize:8, flexShrink:0, padding:'1px 5px',
+                  fontSize:10, flexShrink:0, padding:'2px 6px',
                   color:ev.color, borderColor:ev.color, background:`${ev.color}15`,
                   letterSpacing:'0.1em',
                 }}>
                   {ev.product}
                 </span>
-                <span style={{ fontSize:11, color:'var(--color-text-secondary)', lineHeight:1.4 }}>
+                <span style={{ fontSize:12, color:'var(--color-text-primary)', lineHeight:1.5 }}>
                   {ev.msg}
                 </span>
               </div>
@@ -219,7 +219,7 @@ export default function DashboardPage() {
 
           {/* Overall posture */}
           <div className="bracket-card" style={{ padding:'16px' }}>
-            <div className="mono" style={{ fontSize:9, letterSpacing:'0.13em', color:'var(--color-text-dim)', textTransform:'uppercase', marginBottom:12 }}>
+            <div className="mono" style={{ fontSize:11, letterSpacing:'0.13em', color:'var(--color-text-secondary)', textTransform:'uppercase', marginBottom:12 }}>
               SECURITY POSTURE
             </div>
             {[
@@ -229,8 +229,8 @@ export default function DashboardPage() {
             ].map(m => (
               <div key={m.label} style={{ marginBottom:10 }}>
                 <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
-                  <span style={{ fontSize:11, color:'var(--color-text-secondary)' }}>{m.label}</span>
-                  <span className="mono" style={{ fontSize:11, fontWeight:600, color:m.color }}>{m.val}%</span>
+                  <span style={{ fontSize:12, color:'var(--color-text-secondary)' }}>{m.label}</span>
+                  <span className="mono" style={{ fontSize:12, fontWeight:600, color:m.color }}>{m.val}%</span>
                 </div>
                 <div className="tac-progress">
                   <div className="tac-progress-fill" style={{
@@ -244,16 +244,16 @@ export default function DashboardPage() {
 
           {/* Active product status */}
           <div className="bracket-card" style={{ padding:'16px' }}>
-            <div className="mono" style={{ fontSize:9, letterSpacing:'0.13em', color:'var(--color-text-dim)', textTransform:'uppercase', marginBottom:12 }}>
+            <div className="mono" style={{ fontSize:11, letterSpacing:'0.13em', color:'var(--color-text-secondary)', textTransform:'uppercase', marginBottom:12 }}>
               MODULE STATUS
             </div>
             {[
               { label:'Cloud Scanner', status:'ACTIVE', color:'var(--color-scanner)' },
-              { label:'HEMIS Engine',  status:'STANDBY',color:'var(--color-text-dim)' },
+              { label:'HEMIS Engine',  status:'STANDBY',color:'var(--color-text-secondary)' },
               { label:'Blue Team',     status:'ACTIVE', color:'var(--color-blueteam)' },
             ].map(m => (
               <div key={m.label} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
-                <span style={{ fontSize:11, color:'var(--color-text-secondary)' }}>{m.label}</span>
+                <span style={{ fontSize:12, color:'var(--color-text-secondary)' }}>{m.label}</span>
                 <div style={{ display:'flex', alignItems:'center', gap:5 }}>
                   <span style={{
                     width:5, height:5, borderRadius:'50%',
@@ -261,7 +261,7 @@ export default function DashboardPage() {
                     boxShadow: m.status === 'ACTIVE' ? `0 0 4px ${m.color}` : 'none',
                     animation: m.status === 'ACTIVE' ? 'pulse-dot 2s infinite' : 'none',
                   }} />
-                  <span className="mono" style={{ fontSize:9, letterSpacing:'0.1em', color:m.color, textTransform:'uppercase' }}>
+                  <span className="mono" style={{ fontSize:10, letterSpacing:'0.1em', color:m.color, textTransform:'uppercase' }}>
                     {m.status}
                   </span>
                 </div>
