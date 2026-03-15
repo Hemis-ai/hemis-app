@@ -23,6 +23,10 @@ const PRODUCTS = [
     dimColor: 'var(--color-hemis-dim)',
     icon: '◉',
     desc: 'AI Red Team Engine',
+    tools: [
+      { label: 'SAST', href: '/dashboard/hemis/sast', icon: '◇', desc: 'Static Code Analysis' },
+      { label: 'DAST', href: '/dashboard/hemis/dast', icon: '◆', desc: 'Dynamic App Testing' },
+    ],
   },
   {
     id: 'blueteam',
@@ -33,16 +37,6 @@ const PRODUCTS = [
     dimColor: 'var(--color-blueteam-dim)',
     icon: '◎',
     desc: 'Threat Detection & Response',
-  },
-  {
-    id: 'sast',
-    label: 'SAST',
-    short: 'SAT',
-    href: '/dashboard/sast',
-    color: 'var(--color-sast)',
-    dimColor: 'var(--color-sast-dim)',
-    icon: '◇',
-    desc: 'Static Code Analysis',
   },
 ]
 
@@ -95,70 +89,116 @@ export default function Sidebar() {
       </div>
 
       {/* Products */}
-      <div style={{ padding:'18px 12px 10px' }}>
+      <div style={{ padding:'18px 12px 10px', overflowY:'auto', flex:1 }}>
         <div className="mono" style={{ fontSize:10, letterSpacing:'0.15em', color:'var(--color-text-dim)', textTransform:'uppercase', padding:'0 6px', marginBottom:8 }}>
           Products
         </div>
         {PRODUCTS.map(p => {
           const isActive = path.startsWith(p.href)
+          const isExactActive = path === p.href
           return (
-            <Link key={p.id} href={p.href} style={{ textDecoration:'none', display:'block', marginBottom:2 }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '9px 10px',
-                borderRadius: 0,
-                border: isActive ? `1px solid ${p.color}22` : '1px solid transparent',
-                background: isActive ? `${p.color}10` : 'transparent',
-                transition: 'all 0.12s',
-                cursor: 'pointer',
-                position: 'relative',
-              }}>
-                {/* Active stripe */}
-                {isActive && (
-                  <div style={{
-                    position:'absolute', left:0, top:0, bottom:0, width:2,
-                    background: p.color,
-                  }} />
-                )}
-                <span style={{ fontSize:14, color: isActive ? p.color : 'var(--color-text-dim)', lineHeight:1, flexShrink:0 }}>
-                  {p.icon}
-                </span>
-                <div style={{ minWidth:0, flex:1 }}>
-                  <div className="mono" style={{
-                    fontSize:11, fontWeight:600,
-                    letterSpacing:'0.1em',
-                    color: isActive ? p.color : 'var(--color-text-secondary)',
-                    textTransform:'uppercase',
-                  }}>
-                    {p.label}
+            <div key={p.id}>
+              <Link href={p.href} style={{ textDecoration:'none', display:'block', marginBottom:2 }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '9px 10px',
+                  borderRadius: 0,
+                  border: isActive ? `1px solid ${p.color}22` : '1px solid transparent',
+                  background: isActive ? `${p.color}10` : 'transparent',
+                  transition: 'all 0.12s',
+                  cursor: 'pointer',
+                  position: 'relative',
+                }}>
+                  {/* Active stripe */}
+                  {isActive && (
+                    <div style={{
+                      position:'absolute', left:0, top:0, bottom:0, width:2,
+                      background: p.color,
+                    }} />
+                  )}
+                  <span style={{ fontSize:14, color: isActive ? p.color : 'var(--color-text-dim)', lineHeight:1, flexShrink:0 }}>
+                    {p.icon}
+                  </span>
+                  <div style={{ minWidth:0, flex:1 }}>
+                    <div className="mono" style={{
+                      fontSize:11, fontWeight:600,
+                      letterSpacing:'0.1em',
+                      color: isActive ? p.color : 'var(--color-text-secondary)',
+                      textTransform:'uppercase',
+                    }}>
+                      {p.label}
+                    </div>
+                    <div style={{
+                      fontSize:11,
+                      color: isActive ? 'var(--color-text-secondary)' : 'var(--color-text-dim)',
+                      marginTop:1,
+                    }}>
+                      {p.desc}
+                    </div>
                   </div>
-                  <div style={{
-                    fontSize:11,
-                    color: isActive ? 'var(--color-text-secondary)' : 'var(--color-text-dim)',
-                    marginTop:1,
-                  }}>
-                    {p.desc}
-                  </div>
+                  {isActive && (
+                    <span className="dot-live" style={{
+                      width:5, height:5, flexShrink:0,
+                      background: p.color, boxShadow:`0 0 4px ${p.color}`,
+                    }} />
+                  )}
                 </div>
-                {isActive && (
-                  <span className="dot-live" style={{
-                    width:5, height:5, flexShrink:0,
-                    background: p.color, boxShadow:`0 0 4px ${p.color}`,
-                  }} />
-                )}
-              </div>
-            </Link>
+              </Link>
+
+              {/* Sub-tools (nested under product when active) */}
+              {'tools' in p && p.tools && isActive && (
+                <div style={{ paddingLeft: 20, marginBottom: 4 }}>
+                  {p.tools.map(tool => {
+                    const isToolActive = path === tool.href
+                    return (
+                      <Link key={tool.href} href={tool.href} style={{ textDecoration:'none', display:'block' }}>
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          padding: '6px 10px',
+                          borderLeft: isToolActive ? `2px solid ${p.color}` : '2px solid transparent',
+                          background: isToolActive ? `${p.color}12` : 'transparent',
+                          transition: 'all 0.12s',
+                          cursor: 'pointer',
+                          marginTop: 2,
+                        }}>
+                          <span style={{ fontSize:11, color: isToolActive ? p.color : 'var(--color-text-dim)', lineHeight:1, flexShrink:0 }}>
+                            {tool.icon}
+                          </span>
+                          <div style={{ minWidth:0, flex:1 }}>
+                            <div className="mono" style={{
+                              fontSize:10, fontWeight:600,
+                              letterSpacing:'0.08em',
+                              color: isToolActive ? p.color : 'var(--color-text-secondary)',
+                              textTransform:'uppercase',
+                            }}>
+                              {tool.label}
+                            </div>
+                            <div style={{
+                              fontSize:10,
+                              color: isToolActive ? 'var(--color-text-secondary)' : 'var(--color-text-dim)',
+                              marginTop:1,
+                            }}>
+                              {tool.desc}
+                            </div>
+                          </div>
+                        </div>
+                      </Link>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           )
         })}
-      </div>
 
-      {/* Divider */}
-      <div style={{ margin:'4px 16px', borderTop:'1px solid var(--color-border)' }} />
+        {/* Divider */}
+        <div style={{ margin:'12px 4px 8px', borderTop:'1px solid var(--color-border)' }} />
 
-      {/* Nav */}
-      <nav style={{ padding:'10px 12px', flex:1 }}>
+        {/* Nav */}
         <div className="mono" style={{ fontSize:10, letterSpacing:'0.15em', color:'var(--color-text-dim)', textTransform:'uppercase', padding:'0 6px', marginBottom:8 }}>
           Navigation
         </div>
@@ -191,7 +231,7 @@ export default function Sidebar() {
             </Link>
           )
         })}
-      </nav>
+      </div>
 
       {/* Bottom — user */}
       <div style={{

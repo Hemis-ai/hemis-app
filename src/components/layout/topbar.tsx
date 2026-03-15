@@ -8,7 +8,8 @@ const PAGE_META: Record<string, { title: string; product: string; color: string;
   '/dashboard/scanner':   { title:'CLOUD SCANNER', product:'Cloud Security',  color:'var(--color-scanner)',  breadcrumb:'/ scanner'        },
   '/dashboard/hemis':     { title:'HEMIS',         product:'AI Red Team',     color:'var(--color-hemis)',    breadcrumb:'/ hemis'          },
   '/dashboard/blueteam':  { title:'BLUE TEAM',     product:'Threat Response', color:'var(--color-blueteam)', breadcrumb:'/ blue-team'      },
-  '/dashboard/sast':      { title:'SAST',           product:'Static Analysis', color:'var(--color-sast)',     breadcrumb:'/ sast'           },
+  '/dashboard/hemis/sast': { title:'SAST',           product:'Static Analysis', color:'var(--color-hemis)',    breadcrumb:'/ hemis / sast'    },
+  '/dashboard/hemis/dast': { title:'DAST',           product:'Dynamic Testing', color:'var(--color-hemis)',    breadcrumb:'/ hemis / dast'    },
 }
 
 export default function Topbar() {

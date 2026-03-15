@@ -15,13 +15,13 @@ export async function GET(req: NextRequest) {
   if (error) {
     console.error('[GitHub OAuth] Authorization error:', error)
     return NextResponse.redirect(
-      new URL('/dashboard/sast?github=error&reason=' + encodeURIComponent(error), req.url),
+      new URL('/dashboard/hemis/sast?github=error&reason=' + encodeURIComponent(error), req.url),
     )
   }
 
   if (!code) {
     return NextResponse.redirect(
-      new URL('/dashboard/sast?github=error&reason=no_code', req.url),
+      new URL('/dashboard/hemis/sast?github=error&reason=no_code', req.url),
     )
   }
 
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   if (!savedState || savedState !== state) {
     console.error('[GitHub OAuth] State mismatch — possible CSRF')
     return NextResponse.redirect(
-      new URL('/dashboard/sast?github=error&reason=state_mismatch', req.url),
+      new URL('/dashboard/hemis/sast?github=error&reason=state_mismatch', req.url),
     )
   }
 
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
 
   if (!clientId || !clientSecret) {
     return NextResponse.redirect(
-      new URL('/dashboard/sast?github=error&reason=missing_config', req.url),
+      new URL('/dashboard/hemis/sast?github=error&reason=missing_config', req.url),
     )
   }
 
@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
     if (!tokenRes.ok) {
       console.error('[GitHub OAuth] Token exchange failed:', tokenRes.status)
       return NextResponse.redirect(
-        new URL('/dashboard/sast?github=error&reason=token_exchange_failed', req.url),
+        new URL('/dashboard/hemis/sast?github=error&reason=token_exchange_failed', req.url),
       )
     }
 
@@ -71,14 +71,14 @@ export async function GET(req: NextRequest) {
     if (tokenData.error) {
       console.error('[GitHub OAuth] Token error:', tokenData.error, tokenData.error_description)
       return NextResponse.redirect(
-        new URL('/dashboard/sast?github=error&reason=' + encodeURIComponent(tokenData.error), req.url),
+        new URL('/dashboard/hemis/sast?github=error&reason=' + encodeURIComponent(tokenData.error), req.url),
       )
     }
 
     const accessToken = tokenData.access_token
     if (!accessToken) {
       return NextResponse.redirect(
-        new URL('/dashboard/sast?github=error&reason=no_access_token', req.url),
+        new URL('/dashboard/hemis/sast?github=error&reason=no_access_token', req.url),
       )
     }
 
@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
 
     // ── Step 3: Set cookies and redirect to SAST page ───────────────────────
     const response = NextResponse.redirect(
-      new URL('/dashboard/sast?github=connected', req.url),
+      new URL('/dashboard/hemis/sast?github=connected', req.url),
     )
 
     // Store access token in httpOnly cookie (not accessible from JS)
@@ -129,7 +129,7 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     console.error('[GitHub OAuth] Callback error:', err)
     return NextResponse.redirect(
-      new URL('/dashboard/sast?github=error&reason=internal_error', req.url),
+      new URL('/dashboard/hemis/sast?github=error&reason=internal_error', req.url),
     )
   }
 }
