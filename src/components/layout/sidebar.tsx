@@ -35,14 +35,14 @@ const PRODUCTS = [
     desc: 'Threat Detection & Response',
   },
   {
-    id: 'dast',
-    label: 'DAST',
-    short: 'DST',
-    href: '/dashboard/dast',
-    color: 'var(--color-dast)',
-    dimColor: 'var(--color-dast-dim)',
+    id: 'sast',
+    label: 'SAST',
+    short: 'SAT',
+    href: '/dashboard/sast',
+    color: 'var(--color-sast)',
+    dimColor: 'var(--color-sast-dim)',
     icon: '◇',
-    desc: 'Web App Security Testing',
+    desc: 'Static Code Analysis',
   },
 ]
 
@@ -218,119 +218,12 @@ export default function Sidebar() {
             Security Engineer
           </div>
         </div>
-
-        {/* Products */}
-        <div style={{ padding:'14px 8px 10px' }}>
-          <div className="mono" style={{ fontSize:9, letterSpacing:'0.12em', color:'var(--color-text-dim)', textTransform:'uppercase', padding:'0 6px', marginBottom:6, fontWeight:600 }}>
-            Products
-          </div>
-          {PRODUCTS.map(p => {
-            const isActive = path.startsWith(p.href)
-            return (
-              <Link key={p.id} href={p.href} style={{ textDecoration:'none', display:'block', marginBottom:2 }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '8px 8px',
-                  border: isActive ? `1px solid ${p.color}22` : '1px solid transparent',
-                  background: isActive ? `${p.color}08` : 'transparent',
-                  transition: 'all 0.15s',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}>
-                  {isActive && (
-                    <div style={{
-                      position:'absolute', left:0, top:0, bottom:0, width:2,
-                      background: p.color,
-                    }} />
-                  )}
-                  <span style={{ fontSize:13, color: isActive ? p.color : 'var(--color-text-dim)', lineHeight:1, flexShrink:0 }}>
-                    {p.icon}
-                  </span>
-                  <div style={{ minWidth:0, flex:1 }}>
-                    <div className="mono" style={{
-                      fontSize:9, fontWeight:700,
-                      letterSpacing:'0.08em',
-                      color: isActive ? p.color : 'var(--color-text-secondary)',
-                      textTransform:'uppercase',
-                    }}>
-                      {p.label}
-                    </div>
-                  </div>
-                </div>
-              </Link>
-            )
-          })}
-        </div>
-
-        {/* Divider */}
-        <div style={{ margin:'6px 12px', borderTop:'1px solid var(--color-border)' }} />
-
-        {/* Main Nav */}
-        <nav style={{ padding:'8px 8px', flex:1 }}>
-          <div className="mono" style={{ fontSize:9, letterSpacing:'0.12em', color:'var(--color-text-dim)', textTransform:'uppercase', padding:'0 6px', marginBottom:6, fontWeight:600 }}>
-            Navigation
-          </div>
-          {NAV_ITEMS.map(item => {
-            const isActive = path === item.href
-            return (
-              <Link key={item.href} href={item.href} style={{ textDecoration:'none', display:'block', marginBottom:2 }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '7px 8px',
-                  background: isActive ? 'var(--color-yellow)10' : 'transparent',
-                  border: isActive ? '1px solid var(--color-yellow)33' : '1px solid transparent',
-                  transition: 'all 0.12s',
-                }}>
-                  <span style={{ fontSize:11, color: isActive ? 'var(--color-yellow)' : 'var(--color-text-dim)' }}>
-                    {item.icon}
-                  </span>
-                  <span className="mono" style={{
-                    fontSize:9,
-                    fontWeight: 600,
-                    letterSpacing:'0.08em',
-                    textTransform:'uppercase',
-                    color: isActive ? 'var(--color-yellow)' : 'var(--color-text-secondary)',
-                  }}>
-                    {item.label}
-                  </span>
-                </div>
-              </Link>
-            )
-          })}
-        </nav>
-
-        {/* Bottom — user */}
-        <div style={{
-          padding:'12px 10px',
-          borderTop:'1px solid var(--color-border)',
-          display:'flex',
-          alignItems:'center',
-          gap:8,
-        }}>
-          <div style={{
-            width:28, height:28, borderRadius:'50%',
-            background:'var(--color-yellow-dim)',
-            border:'1px solid var(--color-yellow)',
-            display:'flex', alignItems:'center', justifyContent:'center',
-            flexShrink:0,
-          }}>
-            <span style={{ fontSize:11, color:'var(--color-yellow)', fontWeight:700 }}>A</span>
-          </div>
-          <div style={{ minWidth:0, flex:1, overflow:'hidden' }}>
-            <div style={{ fontSize:11, fontWeight:500, color:'var(--color-text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-              Alex M.
-            </div>
-          </div>
-          <Link href="/login" style={{ textDecoration:'none' }}>
-            <span className="mono" style={{ fontSize:10, color:'var(--color-text-dim)', letterSpacing:'0.08em', cursor:'pointer' }}>
-              ⎋
-            </span>
-          </Link>
-        </div>
+        <Link href="/login" style={{ textDecoration:'none' }}>
+          <span className="mono" style={{ fontSize:10, color:'var(--color-text-dim)', letterSpacing:'0.08em', cursor:'pointer' }}>
+            ⎋
+          </span>
+        </Link>
+      </div>
     </aside>
   )
 }
