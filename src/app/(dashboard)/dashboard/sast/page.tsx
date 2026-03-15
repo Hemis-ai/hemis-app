@@ -1912,6 +1912,7 @@ export default function SastPage() {
 
   // GitHub integration state
   const [ghConnected, setGhConnected]   = useState<boolean | null>(null) // null = loading
+  const [ghUser, setGhUser]             = useState<{ login: string; avatar_url: string } | null>(null)
   const [ghRepos, setGhRepos]           = useState<{ id: number; name: string; full_name: string; private: boolean; language: string | null; default_branch: string; updated_at: string; html_url: string }[]>([])
   const [ghSelectedRepo, setGhSelectedRepo] = useState<string>('')
   const [ghBranch, setGhBranch]         = useState('')
@@ -1941,14 +1942,31 @@ export default function SastPage() {
     reader.readAsText(file)
   }, [])
 
-  // Check GitHub connection unconditionally on mount
+  // Check GitHub connection on mount + handle OAuth callback redirect
   useEffect(() => {
-    if (ghConnected !== null) return
+    // Parse github_user cookie from client side
+    function readGhUserCookie(): { login: string; avatar_url: string } | null {
+      try {
+        const match = document.cookie.split('; ').find(c => c.startsWith('github_user='))
+        if (!match) return null
+        return JSON.parse(decodeURIComponent(match.split('=').slice(1).join('=')))
+      } catch { return null }
+    }
+
+    // If we just came back from OAuth callback, switch to GitHub tab
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('github') === 'connected') {
+      setTab('github')
+      // Clean the URL
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+
     fetch('/api/github/status')
       .then(r => r.json())
       .then(data => {
         setGhConnected(data.connected === true)
         if (data.connected) {
+          setGhUser(data.avatarUrl ? { login: data.accountLogin, avatar_url: data.avatarUrl } : readGhUserCookie())
           fetch('/api/github/repos')
             .then(r => r.json())
             .then(d => { if (d.repos) setGhRepos(d.repos) })
@@ -1956,19 +1974,7 @@ export default function SastPage() {
         }
       })
       .catch(() => setGhConnected(false))
-  }, [ghConnected])
-
-  // Check URL params for successful connection redirect
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const qs = new URLSearchParams(window.location.search)
-      if (qs.get('github') === 'connected') {
-        setTab('github')
-        // Clean up URL without reloading
-        window.history.replaceState({}, '', window.location.pathname)
-      }
-    }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function fetchGhRepoFiles() {
     if (!ghSelectedRepo) return
@@ -2220,14 +2226,11 @@ export default function SastPage() {
                   </button>
                 ))}
               </div>
+              {/* Standalone GitHub connect/repos button */}
               <button
                 onClick={() => {
                   if (ghConnected === false || ghConnected === null) {
-                    if (!process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID) {
-                      setTab('github') // Show the error box
-                    } else {
-                      window.location.href = '/api/auth/github/init'
-                    }
+                    setTab('github')
                   } else {
                     setTab('github')
                   }
@@ -2236,17 +2239,22 @@ export default function SastPage() {
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8,
                   padding: '8px 16px', fontSize: 10, cursor: 'pointer',
-                  background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border)',
-                  color: 'var(--color-text-primary)',
+                  background: tab === 'github' ? 'var(--color-text-primary)' : 'var(--color-bg-elevated)',
+                  border: `1px solid ${tab === 'github' ? 'var(--color-text-primary)' : 'var(--color-border)'}`,
+                  color: tab === 'github' ? 'var(--color-bg-base)' : 'var(--color-text-primary)',
                   letterSpacing: '0.1em', fontWeight: 600,
                   marginBottom: 8,
                   borderRadius: 2,
+                  transition: 'all 0.15s',
                 }}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                   <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.418 22 12c0-5.523-4.477-10-10-10z" fill="currentColor" />
                 </svg>
                 {ghConnected ? 'GITHUB REPOS' : 'CONNECT GITHUB'}
+                {ghConnected === true && (
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-scanner)', display: 'inline-block' }} />
+                )}
               </button>
             </div>
 
@@ -2321,45 +2329,78 @@ export default function SastPage() {
                         <div className="mono" style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 6, letterSpacing: '0.08em' }}>
                           CONNECT GITHUB
                         </div>
-                        <p style={{ fontSize: 13, color: 'var(--color-text-dim)', marginBottom: 20, maxWidth: 400, margin: '0 auto 20px' }}>
-                          Connect your GitHub account to scan repositories directly. Repositories are fetched read-only and never stored.
+                        <p style={{ fontSize: 13, color: 'var(--color-text-dim)', marginBottom: 20, maxWidth: 400, margin: '0 auto 20px', lineHeight: 1.6 }}>
+                          Authenticate with GitHub to scan your repositories directly. Files are fetched read-only and never stored on our servers.
                         </p>
-                        
-                        {!process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID ? (
-                          <div style={{ textAlign: 'left', background: 'var(--color-bg-base)', border: '1px solid var(--color-border)', padding: 16, borderRadius: 4, maxWidth: 500, margin: '0 auto' }}>
-                            <div className="mono" style={{ fontSize: 11, color: 'var(--color-sev-medium)', marginBottom: 8, fontWeight: 700 }}>
-                              ⚠️ OAUTH NOT CONFIGURED
-                            </div>
-                            <p style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 12, lineHeight: 1.5 }}>
-                              The <code style={{ color: 'var(--color-text-primary)' }}>NEXT_PUBLIC_GITHUB_CLIENT_ID</code> environment variable is missing. You need to create a GitHub OAuth App and configure it in your <code>.env.local</code> file.
-                            </p>
-                            <ol style={{ fontSize: 12, color: 'var(--color-text-dim)', margin: 0, paddingLeft: 20, lineHeight: 1.6 }}>
-                              <li>Go to your GitHub Developer Settings and create a new OAuth App.</li>
-                              <li>Set the Callback URL to your local server (e.g., <code>http://localhost:7777/auth/github/callback</code>).</li>
-                              <li>Update your <code>.env.local</code> with the app's Client ID and Secret.</li>
-                            </ol>
-                          </div>
-                        ) : (
-                          <a
-                            href="/api/auth/github/init"
-                            className="mono"
-                            style={{
-                              display: 'inline-block',
-                              padding: '12px 28px', fontSize: 12, fontWeight: 700,
-                              letterSpacing: '0.1em',
-                              background: 'var(--color-text-primary)', color: 'var(--color-bg-base)',
-                              textDecoration: 'none', borderRadius: 2,
-                            }}
-                          >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ verticalAlign: 'middle', marginRight: 8, marginTop: -2 }}>
-                              <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.418 22 12c0-5.523-4.477-10-10-10z" fill="currentColor" />
-                            </svg>
-                            AUTHORIZE WITH GITHUB
-                          </a>
-                        )}
+                        <a
+                          href="/api/github/oauth"
+                          className="mono"
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 10,
+                            padding: '14px 32px', fontSize: 12, fontWeight: 700,
+                            letterSpacing: '0.1em',
+                            background: 'var(--color-text-primary)', color: 'var(--color-bg-base)',
+                            textDecoration: 'none', borderRadius: 2,
+                            transition: 'opacity 0.15s',
+                          }}
+                          onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}
+                          onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+                        >
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                            <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.418 22 12c0-5.523-4.477-10-10-10z" fill="currentColor" />
+                          </svg>
+                          SIGN IN WITH GITHUB
+                        </a>
+                        <div className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)', marginTop: 14, opacity: 0.5 }}>
+                          Grants read-only access to your repositories via OAuth
+                        </div>
                       </div>
                     ) : (
                       <div>
+                        {/* Connected user header */}
+                        <div style={{
+                          display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14,
+                          padding: '8px 12px', background: 'var(--color-bg-base)', border: '1px solid var(--color-scanner)33',
+                        }}>
+                          {ghUser?.avatar_url && (
+                            <img
+                              src={ghUser.avatar_url}
+                              alt={ghUser.login}
+                              width={24} height={24}
+                              style={{ borderRadius: '50%', border: '1px solid var(--color-border)' }}
+                            />
+                          )}
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ opacity: 0.5, flexShrink: 0 }}>
+                            <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.418 22 12c0-5.523-4.477-10-10-10z" fill="currentColor" />
+                          </svg>
+                          <span className="mono" style={{ fontSize: 11, color: 'var(--color-scanner)', fontWeight: 600 }}>
+                            {ghUser?.login ?? 'Connected'}
+                          </span>
+                          <span className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)' }}>
+                            · {ghRepos.length} repos available
+                          </span>
+                          <button
+                            onClick={async () => {
+                              await fetch('/api/github/disconnect', { method: 'POST' })
+                              setGhConnected(false)
+                              setGhUser(null)
+                              setGhRepos([])
+                              setGhSelectedRepo('')
+                              setGhFiles([])
+                              setGhRepoSearch('')
+                            }}
+                            className="mono"
+                            style={{
+                              marginLeft: 'auto', padding: '3px 10px', fontSize: 9,
+                              cursor: 'pointer', letterSpacing: '0.08em',
+                              background: 'none', border: '1px solid var(--color-border)',
+                              color: 'var(--color-text-dim)',
+                            }}
+                          >
+                            DISCONNECT
+                          </button>
+                        </div>
+
                         {/* Repo selector */}
                         <div style={{ display: 'flex', gap: 12, marginBottom: 12, alignItems: 'end' }}>
                           <div style={{ flex: 1 }}>
@@ -2369,13 +2410,14 @@ export default function SastPage() {
                             <div style={{ position: 'relative' }}>
                               <input
                                 value={ghRepoSearch}
-                                onChange={e => { setGhRepoSearch(e.target.value); setGhSelectedRepo('') }}
+                                onChange={e => { setGhRepoSearch(e.target.value); setGhSelectedRepo(''); setGhFiles([]) }}
                                 className="tac-input"
                                 style={{ display: 'block', paddingLeft: 32 }}
                                 placeholder="Search repositories..."
                               />
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }}>
-                                <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.418 22 12c0-5.523-4.477-10-10-10z" fill="currentColor" />
+                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.3 }}>
+                                <path d="M2 1a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h1v2l3-2h6a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2H2z" fill="none" stroke="currentColor" strokeWidth="1.2"/>
+                                <path d="M5 5h6M5 7.5h4" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
                               </svg>
                             </div>
                           </div>
@@ -2422,6 +2464,7 @@ export default function SastPage() {
                                     setGhSelectedRepo(r.full_name)
                                     setGhRepoSearch(r.full_name)
                                     setGhBranch(r.default_branch)
+                                    setGhFiles([])
                                   }}
                                   style={{
                                     display: 'flex', alignItems: 'center', gap: 10,
@@ -2432,8 +2475,8 @@ export default function SastPage() {
                                   onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-bg-elevated)')}
                                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                                 >
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0, opacity: 0.5 }}>
-                                    <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.418 22 12c0-5.523-4.477-10-10-10z" fill="currentColor" />
+                                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, opacity: 0.4 }}>
+                                    <path d="M2 2.5A2.5 2.5 0 014.5 0h8.75a.75.75 0 01.75.75v12.5a.75.75 0 01-.75.75h-2.5a.75.75 0 110-1.5h1.75v-2h-8a1 1 0 00-.714 1.7.75.75 0 01-1.072 1.05A2.495 2.495 0 012 11.5v-9z" fill="currentColor" />
                                   </svg>
                                   <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ fontSize: 12, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -2444,7 +2487,7 @@ export default function SastPage() {
                                     </div>
                                   </div>
                                   {r.private && (
-                                    <span className="mono" style={{ fontSize: 9, padding: '1px 6px', border: '1px solid var(--color-border)', color: 'var(--color-text-dim)' }}>
+                                    <span className="mono" style={{ fontSize: 9, padding: '1px 6px', border: '1px solid var(--color-sev-medium)44', color: 'var(--color-sev-medium)', background: 'rgba(242,209,86,0.08)' }}>
                                       PRIVATE
                                     </span>
                                   )}
@@ -2460,16 +2503,29 @@ export default function SastPage() {
 
                         {/* Error message */}
                         {ghError && (
-                          <div className="mono" style={{ fontSize: 11, color: 'var(--color-hemis)', marginBottom: 10, padding: '6px 10px', background: 'rgba(239,90,90,0.08)', border: '1px solid var(--color-sev-critical)33' }}>
+                          <div className="mono" style={{ fontSize: 11, color: 'var(--color-sev-critical)', marginBottom: 10, padding: '6px 10px', background: 'rgba(239,90,90,0.08)', border: '1px solid rgba(239,90,90,0.2)' }}>
                             {ghError}
+                          </div>
+                        )}
+
+                        {/* Loading state */}
+                        {ghLoading && (
+                          <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)', padding: '24px 0', textAlign: 'center' }}>
+                            <span className="dot-live" style={{ background: 'var(--color-sast)', display: 'inline-block', width: 6, height: 6, marginRight: 8 }} />
+                            Fetching files from {ghSelectedRepo}...
                           </div>
                         )}
 
                         {/* Loaded files list */}
                         {ghFiles.length > 0 && (
                           <div>
-                            <div className="mono" style={{ fontSize: 10, color: 'var(--color-scanner)', letterSpacing: '0.1em', marginBottom: 6 }}>
-                              {ghFiles.length} FILES LOADED FROM {ghSelectedRepo}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                              <div className="mono" style={{ fontSize: 10, color: 'var(--color-scanner)', letterSpacing: '0.1em' }}>
+                                {ghFiles.length} FILES LOADED FROM {ghSelectedRepo}
+                              </div>
+                              <span className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)' }}>
+                                · {(ghFiles.reduce((a, f) => a + f.content.length, 0) / 1024).toFixed(1)} KB total
+                              </span>
                             </div>
                             <div style={{
                               border: '1px solid var(--color-border)', background: 'var(--color-bg-base)',
@@ -2493,18 +2549,10 @@ export default function SastPage() {
                           </div>
                         )}
 
-                        {/* Loading state */}
-                        {ghLoading && (
-                          <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)', padding: '24px 0', textAlign: 'center' }}>
-                            <span className="dot-live" style={{ background: 'var(--color-sast)', display: 'inline-block', width: 6, height: 6, marginRight: 8 }} />
-                            Fetching files from {ghSelectedRepo}...
-                          </div>
-                        )}
-
-                        {/* Empty state when connected but no files loaded */}
-                        {!ghLoading && ghFiles.length === 0 && ghSelectedRepo && !ghError && (
+                        {/* Empty state: no repo selected yet */}
+                        {!ghLoading && ghFiles.length === 0 && !ghSelectedRepo && !ghError && ghRepos.length === 0 && (
                           <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)', padding: '20px 0', textAlign: 'center' }}>
-                            Select a repository and click FETCH FILES to load source code.
+                            Loading repositories...
                           </div>
                         )}
                       </div>
