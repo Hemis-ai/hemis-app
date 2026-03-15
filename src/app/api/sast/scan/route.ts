@@ -6,6 +6,7 @@ import { detectLanguage } from '@/lib/sast/language-detector'
 import { scanDependencies, isDependencyManifest } from '@/lib/sast/dependency-scanner'
 import { scanForHighEntropy } from '@/lib/sast/entropy-scanner'
 import { scanWithAST } from '@/lib/sast/ast-engine'
+import { runDeepTaintAnalysis } from '@/lib/sast/taint-engine'
 import { verifyAccessToken, ACCESS_COOKIE } from '@/lib/auth/jwt'
 import { prisma, isDatabaseReachable } from '@/lib/db'
 import type { SastScanRequest, SastFindingResult } from '@/lib/types/sast'
@@ -135,6 +136,18 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Run deep taint analysis (JS/TS files) ────────────────────────────────
+    const taintFindings: SastFindingResult[] = []
+    for (const file of body.files) {
+      if (!isDependencyManifest(file.path)) {
+        try {
+          taintFindings.push(...runDeepTaintAnalysis(scanId, file.path, file.content))
+        } catch {
+          // Taint analysis may fail on some files
+        }
+      }
+    }
+
     // ── Run SAST rule scanner ───────────────────────────────────────────────
     const scanResult = runSastScan(scanId, body.name, body.files)
 
@@ -142,8 +155,12 @@ export async function POST(req: NextRequest) {
     const regexKeys = new Set(scanResult.findings.map(f => `${f.filePath}:${f.lineStart}:${f.cwe}`))
     const uniqueAstFindings = astFindings.filter(f => !regexKeys.has(`${f.filePath}:${f.lineStart}:${f.cwe}`))
 
-    // Merge all findings: secrets + entropy + SCA + AST + SAST regex rules
-    const mergedFindings = [...secretFindings, ...entropyFindings, ...depFindings, ...uniqueAstFindings, ...scanResult.findings]
+    // Deduplicate taint findings against regex + AST findings
+    const allKeys = new Set([...regexKeys, ...uniqueAstFindings.map(f => `${f.filePath}:${f.lineStart}:${f.cwe}`)])
+    const uniqueTaintFindings = taintFindings.filter(f => !allKeys.has(`${f.filePath}:${f.lineStart}:${f.cwe}`))
+
+    // Merge all findings: secrets + entropy + SCA + AST + taint + SAST regex rules
+    const mergedFindings = [...secretFindings, ...entropyFindings, ...depFindings, ...uniqueAstFindings, ...uniqueTaintFindings, ...scanResult.findings]
     const summary = {
       critical: mergedFindings.filter(f => f.severity === 'CRITICAL').length,
       high:     mergedFindings.filter(f => f.severity === 'HIGH').length,

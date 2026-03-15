@@ -1851,10 +1851,36 @@ function ReportPanel({ scanResult }: { scanResult: SastScanResult | null }) {
             </div>
           )}
 
-          {/* Regenerate button */}
+          {/* Action buttons */}
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 8 }}>
             <button onClick={generateReport} className="mono" style={{ padding: '8px 20px', fontSize: 10, cursor: 'pointer', background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border)', color: 'var(--color-sast)', letterSpacing: '0.1em' }}>
               REGENERATE
+            </button>
+            <button
+              onClick={async () => {
+                if (!scanResult) return
+                try {
+                  const res = await fetch('/api/sast/report/pdf', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scan: scanResult, includeCompliance: inclCompliance }),
+                  })
+                  if (!res.ok) throw new Error('PDF generation failed')
+                  const blob = await res.blob()
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `hemisx-sast-${scanResult.id.slice(0, 8)}.pdf`
+                  document.body.appendChild(a)
+                  a.click()
+                  document.body.removeChild(a)
+                  URL.revokeObjectURL(url)
+                } catch (e) { console.error('PDF download failed:', e) }
+              }}
+              className="mono"
+              style={{ padding: '8px 20px', fontSize: 10, cursor: 'pointer', background: 'var(--color-sast)', border: 'none', color: '#0a0d0f', fontWeight: 700, letterSpacing: '0.1em' }}
+            >
+              DOWNLOAD PDF
             </button>
             <button onClick={() => setReport(null)} className="mono" style={{ padding: '8px 20px', fontSize: 10, cursor: 'pointer', background: 'none', border: '1px solid var(--color-border)', color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>
               CLOSE

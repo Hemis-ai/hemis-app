@@ -27,8 +27,9 @@ model Organization {
   alerts       Alert[]
   awsAccounts  AwsAccount[]
   redTeamScans RedTeamScan[]
-  auditLogs    AuditLog[]
-  sastScans    SastScan[]
+  auditLogs            AuditLog[]
+  sastScans            SastScan[]
+  githubInstallations  GitHubInstallation[]
 }
 
 model User {
@@ -341,5 +342,17 @@ model SastFinding {
   @@index([ruleId])
 }
 
-// Add SAST relation to Organization + User
-// (done via back-references below — Prisma resolves automatically)
+// ─── GitHub App Integration ───────────────────────────────────────────────
+model GitHubInstallation {
+  id             String   @id @default(cuid())
+  orgId          String
+  installationId Int      @unique
+  accountLogin   String   @default("")
+  accountType    String   @default("Organization") // "Organization" or "User"
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId])
+}
