@@ -3,8 +3,16 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
+// ── Feature flags (set via env vars, default ON in dev) ──────────────────────
+const FF = {
+  sast:      process.env.NEXT_PUBLIC_FEATURE_SAST      !== 'false',
+  dast:      process.env.NEXT_PUBLIC_FEATURE_DAST      !== 'false',
+  blueteam:  process.env.NEXT_PUBLIC_FEATURE_BLUETEAM  !== 'false',
+  scanner:   process.env.NEXT_PUBLIC_FEATURE_SCANNER   !== 'false',
+}
+
 const PRODUCTS = [
-  {
+  ...(FF.scanner ? [{
     id: 'scanner',
     label: 'CLOUD SCANNER',
     short: 'SCN',
@@ -13,7 +21,7 @@ const PRODUCTS = [
     dimColor: 'var(--color-scanner-dim)',
     icon: '◈',
     desc: 'Cloud Security Posture',
-  },
+  }] : []),
   {
     id: 'hemis',
     label: 'HEMIS',
@@ -24,11 +32,11 @@ const PRODUCTS = [
     icon: '◉',
     desc: 'AI Red Team Engine',
     tools: [
-      { label: 'SAST', href: '/dashboard/hemis/sast', icon: '◇', desc: 'Static Code Analysis' },
-      { label: 'DAST', href: '/dashboard/hemis/dast', icon: '◆', desc: 'Dynamic App Testing' },
+      ...(FF.sast ? [{ label: 'SAST', href: '/dashboard/hemis/sast', icon: '◇', desc: 'Static Code Analysis' }] : []),
+      ...(FF.dast ? [{ label: 'DAST', href: '/dashboard/hemis/dast', icon: '◆', desc: 'Dynamic App Testing' }] : []),
     ],
   },
-  {
+  ...(FF.blueteam ? [{
     id: 'blueteam',
     label: 'BLUE TEAM',
     short: 'BLU',
@@ -37,7 +45,7 @@ const PRODUCTS = [
     dimColor: 'var(--color-blueteam-dim)',
     icon: '◎',
     desc: 'Threat Detection & Response',
-  },
+  }] : []),
 ]
 
 const NAV_ITEMS = [
