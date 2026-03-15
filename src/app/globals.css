@@ -20,33 +20,27 @@
   --color-border:         #2a3d52;
   --color-border-bright:  #3d5670;
   --color-border-focus:   #4d6d8e;
-  --color-text-primary:   #f0f4fa;
-  --color-text-secondary: #b2cce4;
-  --color-text-dim:       #8ba8c8;
-  --color-yellow:         #f2d156;
+  --color-text-primary:   #e8eef6;
+  --color-text-secondary: #9fb8d4;
+  --color-text-dim:       #5c7694;
+  --color-yellow:         #f0cd52;
   --color-yellow-dim:     #2e2200;
   --color-scanner:        #00c078;
   --color-scanner-dim:    #002c1c;
-  --color-hemis:          #ef5a5a;
+  --color-hemis:          #eb5050;
   --color-hemis-dim:      #2e0c0c;
-  --color-hemis-orange:   #ec8450;
-  --color-blueteam:       #5ab0ff;
+  --color-hemis-orange:   #ea7a48;
+  --color-blueteam:       #4aa8ff;
   --color-blueteam-dim:   #001a38;
-  --color-sast:           #a78bfa;
-  --color-sast-dim:       #1a0e38;
-  --color-critical:       #ef5a5a;
-  --color-high:           #ec8450;
-  --color-medium:         #f2d156;
-  --color-low:            #8ba8c8;
-  /* Severity aliases used in SAST UI */
-  --color-sev-critical:   #ef5a5a;
-  --color-sev-high:       #ec8450;
-  --color-sev-medium:     #f2d156;
-  --color-sev-low:        #5ab0ff;
-  --color-sev-info:       #8ba8c8;
+  --color-dast:           #a259ff;
+  --color-dast-dim:       #1a0e2e;
+  --color-critical:       #eb5050;
+  --color-high:           #ea7a48;
+  --color-medium:         #f0cd52;
+  --color-low:            #7a9cbc;
 }
 
-/* ── DARK THEME (default) — high-contrast text, everything readable ── */
+/* ── DARK THEME (default) — refined contrast and depth ── */
 [data-theme="dark"] {
   --color-bg-base:        #0a111c;
   --color-bg-surface:     #121d2e;
@@ -55,30 +49,24 @@
   --color-border:         #2a3d52;
   --color-border-bright:  #3d5670;
   --color-border-focus:   #4d6d8e;
-  /* Brighter text so all labels and body copy are clearly visible */
-  --color-text-primary:   #f0f4fa;
-  --color-text-secondary: #b2cce4;
-  --color-text-dim:       #8ba8c8;
-  --color-yellow:         #f2d156;
+  --color-text-primary:   #e8eef6;
+  --color-text-secondary: #9fb8d4;
+  --color-text-dim:       #5c7694;
+  --color-yellow:         #f0cd52;
   --color-yellow-dim:     #2e2200;
   --color-scanner:        #00c078;
   --color-scanner-dim:    #002c1c;
-  --color-hemis:          #ef5a5a;
+  --color-hemis:          #eb5050;
   --color-hemis-dim:      #2e0c0c;
-  --color-hemis-orange:   #ec8450;
-  --color-blueteam:       #5ab0ff;
+  --color-hemis-orange:   #ea7a48;
+  --color-blueteam:       #4aa8ff;
   --color-blueteam-dim:   #001a38;
-  --color-sast:           #a78bfa;
-  --color-sast-dim:       #1a0e38;
-  --color-critical:       #ef5a5a;
-  --color-high:           #ec8450;
-  --color-medium:         #f2d156;
-  --color-low:            #8ba8c8;
-  --color-sev-critical:   #ef5a5a;
-  --color-sev-high:       #ec8450;
-  --color-sev-medium:     #f2d156;
-  --color-sev-low:        #5ab0ff;
-  --color-sev-info:       #8ba8c8;
+  --color-dast:           #a259ff;
+  --color-dast-dim:       #1a0e2e;
+  --color-critical:       #eb5050;
+  --color-high:           #ea7a48;
+  --color-medium:         #f0cd52;
+  --color-low:            #7a9cbc;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -125,19 +113,22 @@ body {
 .bracket-scanner::before, .bracket-scanner::after { border-color: var(--color-scanner); }
 .bracket-hemis::before,   .bracket-hemis::after   { border-color: var(--color-hemis); }
 .bracket-blueteam::before,.bracket-blueteam::after { border-color: var(--color-blueteam); }
+.bracket-dast::before,    .bracket-dast::after     { border-color: var(--color-dast); }
 
 /* ── Pulsing status dot ── */
 .dot-live { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--color-scanner); box-shadow:0 0 5px rgba(0,184,112,0.6); animation:pulse-dot 2.4s ease-in-out infinite; }
 .dot-live.red    { background:var(--color-hemis);   box-shadow:0 0 5px rgba(232,69,69,0.6); }
 .dot-live.blue   { background:var(--color-blueteam);box-shadow:0 0 5px rgba(58,158,245,0.6); }
 .dot-live.yellow { background:var(--color-yellow);  box-shadow:0 0 5px rgba(239,200,74,0.6); }
+.dot-live.purple { background:var(--color-dast);    box-shadow:0 0 5px rgba(162,89,255,0.6); }
 @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
 /* ── Scan sweep line ── */
 @keyframes scan-sweep { 0%{top:0;opacity:.7} 100%{top:100%;opacity:0} }
 .scan-line { position:absolute; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--color-scanner),transparent); animation:scan-sweep 2.2s linear infinite; pointer-events:none; }
 .scan-line.red  { background:linear-gradient(90deg,transparent,var(--color-hemis),transparent); }
-.scan-line.blue { background:linear-gradient(90deg,transparent,var(--color-blueteam),transparent); }
+.scan-line.blue   { background:linear-gradient(90deg,transparent,var(--color-blueteam),transparent); }
+.scan-line.purple { background:linear-gradient(90deg,transparent,var(--color-dast),transparent); }
 
 /* ── Terminal ── */
 .terminal { background:#0c1420; border:1px solid var(--color-border); font-family:var(--font-mono); font-size:13px; color:var(--color-text-secondary); overflow-y:auto; }
@@ -231,6 +222,8 @@ body {
   --color-hemis-orange:   #b84000;
   --color-blueteam:       #0060b0;
   --color-blueteam-dim:   #d0e8ff;
+  --color-dast:           #7c30d8;
+  --color-dast-dim:       #ece0ff;
   --color-critical:       #c01818;
   --color-high:           #b84000;
   --color-medium:         #a87800;

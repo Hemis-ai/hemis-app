@@ -148,3 +148,74 @@ export interface ExecutionResult {
   startedAt:      string
   completedAt?:   string
 }
+
+// ─── DAST ──────────────────────────────────────────────────────────────────
+export type DastScanStatus = 'CREATED' | 'QUEUED' | 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+export type DastFindingStatus = 'OPEN' | 'ACKNOWLEDGED' | 'REMEDIATED' | 'FALSE_POSITIVE' | 'IN_PROGRESS'
+
+export interface DastScan {
+  id:               string
+  orgId?:           string
+  name:             string
+  targetUrl:        string
+  status:           DastScanStatus
+  scanProfile:      'full' | 'quick' | 'api_only'
+  progress:         number
+  currentPhase:     string
+  endpointsDiscovered: number
+  endpointsTested:  number
+  payloadsSent:     number
+  findingsCount?:   number
+  criticalCount:    number
+  highCount:        number
+  mediumCount:      number
+  lowCount:         number
+  infoCount:        number
+  riskScore:        number
+  executiveSummary: string | null
+  reportUrl:        string | null
+  startedAt:        string
+  completedAt:      string | null
+  createdAt?:       string
+}
+
+export interface DastFinding {
+  id:                string
+  scanId:            string
+  type?:             string
+  title:             string
+  description:       string
+  severity:          Severity
+  riskScore?:        number
+  cvssScore:         number | null
+  cvssVector:        string | null
+  owaspCategory:     string
+  cweId:             string | null
+  affectedUrl:       string
+  affectedParameter: string | null
+  payload:           string | null
+  evidence?:         string | null
+  confidenceScore:   number
+  status:            DastFindingStatus
+  isConfirmed?:      boolean
+  businessImpact:    string | null
+  remediation:       string
+  remediationCode:   string | null
+  pciDssRefs:        string[]
+  soc2Refs:          string[]
+  mitreAttackIds:    string[]
+  detectedAt?:       string
+}
+
+export interface DastScanProgress {
+  scanId:             string
+  status:             DastScanStatus
+  progress:           number
+  currentPhase:       string
+  endpointsDiscovered: number
+  endpointsTested:    number
+  payloadsSent:       number
+  findingsCount:      number
+  message:            string
+  timestamp:          string
+}

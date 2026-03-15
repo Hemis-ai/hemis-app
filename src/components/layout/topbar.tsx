@@ -10,6 +10,7 @@ const PAGE_META: Record<string, { title: string; product: string; color: string;
   '/dashboard/scanner':   { title:'CLOUD SCANNER', product:'Cloud Security',  color:'var(--color-scanner)',  breadcrumb:'/ scanner'        },
   '/dashboard/hemis':     { title:'HEMIS',         product:'AI Red Team',     color:'var(--color-hemis)',    breadcrumb:'/ hemis'          },
   '/dashboard/blueteam':  { title:'BLUE TEAM',     product:'Threat Response', color:'var(--color-blueteam)', breadcrumb:'/ blue-team'      },
+  '/dashboard/dast':      { title:'DAST',          product:'Web App Security', color:'var(--color-dast)',     breadcrumb:'/ dast'            },
 }
 
 const PRODUCT_TOOLS = {
@@ -65,10 +66,10 @@ export default function Topbar() {
     }}>
       {/* Page identity */}
       <div style={{ flex:1, display:'flex', alignItems:'center', gap:10 }}>
-        <span className="mono" style={{ fontSize:12, color:'var(--color-text-secondary)', letterSpacing:'0.08em' }}>
+        <span className="mono" style={{ fontSize:11, color:'var(--color-text-dim)', letterSpacing:'0.08em' }}>
           console.hemisx.com
         </span>
-        <span style={{ color:'var(--color-border-bright)', fontSize:12 }}>›</span>
+        <span style={{ color:'var(--color-border-bright)', fontSize:11 }}>›</span>
         <span className="mono" style={{ fontSize:11, color:'var(--color-text-secondary)', letterSpacing:'0.08em' }}>
           {meta.breadcrumb}
         </span>
@@ -85,73 +86,19 @@ export default function Topbar() {
       </div>
 
       {/* Right cluster */}
-      <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'flex-end', gap:16, position:'relative' }}>
-        {/* Tools Dropdown — only show if product is active */}
-        {activeProduct && tools.length > 0 && (
-          <div style={{ position:'relative' }}>
-            <button
-              onClick={() => setShowToolsDropdown(!showToolsDropdown)}
-              style={{
-                display:'flex', alignItems:'center', gap:6,
-                background:'transparent', border:`1px solid ${activeProduct.color}`,
-                padding:'6px 10px', cursor:'pointer',
-                transition:'all 0.12s',
-                borderColor: showToolsDropdown ? activeProduct.color : `${activeProduct.color}66`,
-              }}
-              onMouseEnter={e => !showToolsDropdown && (e.currentTarget.style.borderColor = activeProduct.color)}
-              onMouseLeave={e => !showToolsDropdown && (e.currentTarget.style.borderColor = `${activeProduct.color}66`)}
-            >
-              <span className="mono" style={{ fontSize:11, color: activeProduct.color, letterSpacing:'0.08em', fontWeight:600 }}>
-                TOOLS
-              </span>
-              <span className="mono" style={{ fontSize:9, color: activeProduct.color }}>▾</span>
-            </button>
+      <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'flex-end', gap:16 }}>
+        {/* Live time */}
+        <div className="mono" style={{ fontSize:11, color:'var(--color-text-dim)', letterSpacing:'0.08em' }}>
+          {new Date().toLocaleDateString('en-US', { month:'short', day:'2-digit', year:'numeric' })}
+        </div>
 
-            {/* Dropdown Menu */}
-            {showToolsDropdown && (
-              <div style={{
-                position:'absolute', top:'100%', right:0, marginTop:4,
-                background:'var(--color-bg-elevated)', border:`1px solid ${activeProduct.color}44`,
-                minWidth:200, zIndex:1000,
-                boxShadow:'0 8px 24px rgba(0,0,0,0.4)',
-              }}>
-                {tools.map(tool => {
-                  const isActive = path === tool.href
-                  return (
-                    <Link
-                      key={tool.label}
-                      href={tool.href}
-                      onClick={() => setShowToolsDropdown(false)}
-                      style={{ textDecoration:'none', display:'block' }}
-                    >
-                      <div style={{
-                        display:'flex', alignItems:'center', gap:8,
-                        background: isActive ? `${activeProduct.color}15` : 'transparent',
-                        border: isActive ? `1px solid ${activeProduct.color}44` : '1px solid transparent',
-                        borderBottom: '1px solid var(--color-border)',
-                        padding:'10px 12px', cursor:'pointer',
-                        transition:'all 0.1s',
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.background = `${activeProduct.color}10`)}
-                      onMouseLeave={e => {
-                        e.currentTarget.style.background = isActive ? `${activeProduct.color}15` : 'transparent'
-                      }}
-                      >
-                        <span style={{ fontSize:11, color: activeProduct.color, flexShrink:0 }}>{tool.icon}</span>
-                        <span className="mono" style={{
-                          fontSize:9, fontWeight:600, color: isActive ? activeProduct.color : 'var(--color-text-secondary)',
-                          letterSpacing:'0.08em', textTransform:'uppercase',
-                        }}>
-                          {tool.label}
-                        </span>
-                      </div>
-                    </Link>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
+        {/* Alert badge */}
+        <div style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer' }}>
+          <span className="dot-live red" style={{ width:5, height:5 }} />
+          <span className="mono" style={{ fontSize:11, color:'var(--color-hemis)', letterSpacing:'0.08em' }}>
+            3 CRITICAL
+          </span>
+        </div>
 
         {/* Theme toggle */}
         <button
@@ -194,7 +141,7 @@ export default function Topbar() {
             <span style={{ fontSize:10, color:'var(--color-yellow)', fontWeight:700 }}>H</span>
           </div>
           <span style={{ fontSize:13, color:'var(--color-text-secondary)' }}>Acme Corp</span>
-          <span className="mono" style={{ fontSize:11, color:'var(--color-text-secondary)' }}>▾</span>
+          <span className="mono" style={{ fontSize:10, color:'var(--color-text-dim)' }}>▾</span>
         </div>
       </div>
     </header>
