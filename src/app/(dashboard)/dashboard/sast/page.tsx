@@ -2223,7 +2223,11 @@ export default function SastPage() {
               <button
                 onClick={() => {
                   if (ghConnected === false || ghConnected === null) {
-                    window.location.href = '/api/auth/github/init'
+                    if (!process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID) {
+                      setTab('github') // Show the error box
+                    } else {
+                      window.location.href = '/api/auth/github/init'
+                    }
                   } else {
                     setTab('github')
                   }
@@ -2321,22 +2325,38 @@ export default function SastPage() {
                           Connect your GitHub account to scan repositories directly. Repositories are fetched read-only and never stored.
                         </p>
                         
-                        <a
-                          href="/api/auth/github/init"
-                          className="mono"
-                          style={{
-                            display: 'inline-block',
-                            padding: '12px 28px', fontSize: 12, fontWeight: 700,
-                            letterSpacing: '0.1em',
-                            background: 'var(--color-text-primary)', color: 'var(--color-bg-base)',
-                            textDecoration: 'none', borderRadius: 2,
-                          }}
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ verticalAlign: 'middle', marginRight: 8, marginTop: -2 }}>
-                            <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.418 22 12c0-5.523-4.477-10-10-10z" fill="currentColor" />
-                          </svg>
-                          AUTHORIZE WITH GITHUB
-                        </a>
+                        {!process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID ? (
+                          <div style={{ textAlign: 'left', background: 'var(--color-bg-base)', border: '1px solid var(--color-border)', padding: 16, borderRadius: 4, maxWidth: 500, margin: '0 auto' }}>
+                            <div className="mono" style={{ fontSize: 11, color: 'var(--color-sev-medium)', marginBottom: 8, fontWeight: 700 }}>
+                              ⚠️ OAUTH NOT CONFIGURED
+                            </div>
+                            <p style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 12, lineHeight: 1.5 }}>
+                              The <code style={{ color: 'var(--color-text-primary)' }}>NEXT_PUBLIC_GITHUB_CLIENT_ID</code> environment variable is missing. You need to create a GitHub OAuth App and configure it in your <code>.env.local</code> file.
+                            </p>
+                            <ol style={{ fontSize: 12, color: 'var(--color-text-dim)', margin: 0, paddingLeft: 20, lineHeight: 1.6 }}>
+                              <li>Go to your GitHub Developer Settings and create a new OAuth App.</li>
+                              <li>Set the Callback URL to your local server (e.g., <code>http://localhost:7777/auth/github/callback</code>).</li>
+                              <li>Update your <code>.env.local</code> with the app's Client ID and Secret.</li>
+                            </ol>
+                          </div>
+                        ) : (
+                          <a
+                            href="/api/auth/github/init"
+                            className="mono"
+                            style={{
+                              display: 'inline-block',
+                              padding: '12px 28px', fontSize: 12, fontWeight: 700,
+                              letterSpacing: '0.1em',
+                              background: 'var(--color-text-primary)', color: 'var(--color-bg-base)',
+                              textDecoration: 'none', borderRadius: 2,
+                            }}
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ verticalAlign: 'middle', marginRight: 8, marginTop: -2 }}>
+                              <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.418 22 12c0-5.523-4.477-10-10-10z" fill="currentColor" />
+                            </svg>
+                            AUTHORIZE WITH GITHUB
+                          </a>
+                        )}
                       </div>
                     ) : (
                       <div>
