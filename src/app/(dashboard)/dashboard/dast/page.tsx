@@ -463,13 +463,13 @@ function FindingDetail({ finding, onClose }: { finding: DastFinding; onClose: ()
         <>
           <SectionLabel label="COMPLIANCE REFERENCES" />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
-            {finding.pciDssRefs.map(r => (
+            {finding.pciDssRefs.map((r: string) => (
               <span key={r} className="label-tag" style={{ color: 'var(--color-dast)', borderColor: 'var(--color-dast)', background: 'var(--color-dast-dim)' }}>PCI {r}</span>
             ))}
-            {finding.soc2Refs.map(r => (
+            {finding.soc2Refs.map((r: string) => (
               <span key={r} className="label-tag" style={{ color: 'var(--color-blueteam)', borderColor: 'var(--color-blueteam)', background: 'var(--color-blueteam-dim)' }}>SOC2 {r}</span>
             ))}
-            {finding.mitreAttackIds.map(r => (
+            {finding.mitreAttackIds.map((r: string) => (
               <span key={r} className="label-tag" style={{ color: 'var(--color-hemis)', borderColor: 'var(--color-hemis)', background: 'var(--color-hemis-dim)' }}>ATT&CK {r}</span>
             ))}
           </div>
