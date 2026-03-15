@@ -1,6 +1,6 @@
 // ─── Shared ───────────────────────────────────────────────────────────────
 export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO'
-export type Status   = 'OPEN' | 'REMEDIATED' | 'ACKNOWLEDGED'
+export type Status   = 'OPEN' | 'REMEDIATED' | 'ACKNOWLEDGED' | 'IN_PROGRESS'
 
 // ─── Scanner ──────────────────────────────────────────────────────────────
 export interface ScanFinding {
@@ -101,50 +101,70 @@ export interface HealthScore {
   mttr:       string        // Mean time to respond
 }
 
-// ─── Red Team ─────────────────────────────────────────────────────────────
-export interface Finding {
-  id:                 string
-  type:               string        // sql_injection, xss, command_injection, etc.
-  severity:           Severity
-  cvssScore:          number        // 0-10
-  affectedComponent:  string        // endpoint, service, or resource affected
-  description:        string
-  remediation:        string
-  proof_of_concept:   string
-  detectedAt:         string        // ISO timestamp
-  mitreId:            string        // T1190, etc.
-  status:             Status        // OPEN, ACKNOWLEDGED, REMEDIATED
+// ─── DAST ─────────────────────────────────────────────────────────────────
+export type DastScanStatus = 'CREATED' | 'QUEUED' | 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+export type DastFindingStatus = 'OPEN' | 'ACKNOWLEDGED' | 'REMEDIATED' | 'FALSE_POSITIVE' | 'IN_PROGRESS'
+
+export interface DastScan {
+  id:                  string
+  orgId:               string
+  name:                string
+  targetUrl:           string
+  scanProfile:         string
+  status:              DastScanStatus
+  progress:            number
+  currentPhase:        string
+  riskScore:           number
+  endpointsDiscovered: number
+  endpointsTested:     number
+  payloadsSent:        number
+  criticalCount:       number
+  highCount:           number
+  mediumCount:         number
+  lowCount:            number
+  infoCount:           number
+  executiveSummary:    string | null
+  reportUrl:           string | null
+  startedAt:           string | null
+  completedAt:         string | null
+  createdAt:           string
 }
 
-export interface ScanJob {
-  id:           string
-  target:       string
-  scope:        string[]
-  engagementId: string
-  status:       'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
-  progress:     number        // 0-100
-  findings?:    Finding[]
-  startedAt:    string
-  completedAt?: string
+export interface DastFinding {
+  id:                string
+  scanId:            string
+  type:              string
+  owaspCategory:     string
+  cweId:             string | null
+  severity:          Severity
+  cvssScore:         number | null
+  cvssVector:        string | null
+  riskScore:         number
+  title:             string
+  description:       string
+  businessImpact:    string | null
+  affectedUrl:       string
+  affectedParameter: string | null
+  payload:           string | null
+  remediation:       string
+  remediationCode:   string | null
+  pciDssRefs:        string[]
+  soc2Refs:          string[]
+  mitreAttackIds:    string[]
+  confidenceScore:   number
+  status:            DastFindingStatus
+  isConfirmed:       boolean
 }
 
-export interface Payload {
-  id:           string
-  vulnType:     string
-  payload:      string
-  mitreId:      string
-  cvssScore:    number
-  remediation:  string
-  engagementId: string
-  generatedAt:  string
-}
-
-export interface ExecutionResult {
-  id:             string
-  engagementId:   string
-  targetUrl:      string
-  simulationType: string
-  status:         'RUNNING' | 'COMPLETED' | 'FAILED'
-  startedAt:      string
-  completedAt?:   string
+export interface DastScanProgress {
+  scanId:              string
+  status:              DastScanStatus
+  progress:            number
+  currentPhase:        string
+  endpointsDiscovered: number
+  endpointsTested:     number
+  payloadsSent:        number
+  findingsCount:       number
+  message:             string
+  timestamp:           string
 }

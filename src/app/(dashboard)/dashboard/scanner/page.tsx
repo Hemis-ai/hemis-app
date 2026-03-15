@@ -34,7 +34,7 @@ function RiskBar({ score }: { score: number }) {
       <div className="tac-progress" style={{ flex:1 }}>
         <div className="tac-progress-fill" style={{ width:`${score}%`, background:color }} />
       </div>
-      <span className="mono" style={{ fontSize:11, color, width:28 }}>{score}</span>
+      <span className="mono" style={{ fontSize:10, color, width:28 }}>{score}</span>
     </div>
   )
 }
@@ -109,13 +109,13 @@ export default function ScannerPage() {
         {/* Header */}
         <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:24 }}>
           <div>
-            <div className="mono" style={{ fontSize:11, letterSpacing:'0.15em', color:'var(--color-scanner)', textTransform:'uppercase', marginBottom:5 }}>
+            <div className="mono" style={{ fontSize:10, letterSpacing:'0.15em', color:'var(--color-scanner)', textTransform:'uppercase', marginBottom:5 }}>
               [ CLOUD SECURITY POSTURE MANAGEMENT ]
             </div>
-            <h1 className="display" style={{ fontSize:22, fontWeight:700, color:'var(--color-text-primary)', margin:0 }}>
+            <h1 className="display" style={{ fontSize:20, fontWeight:700, color:'var(--color-text-primary)', margin:0 }}>
               Cloud Scanner
             </h1>
-            <p style={{ color:'var(--color-text-secondary)', margin:'4px 0 0', fontSize:13 }}>
+            <p style={{ color:'var(--color-text-secondary)', margin:'4px 0 0', fontSize:12 }}>
               AWS account 482910 · us-east-1, us-west-2 · 247 resources
             </p>
           </div>
@@ -125,7 +125,7 @@ export default function ScannerPage() {
               <button onClick={() => setReportVisible(true)} style={{
                 background:'transparent', border:'1px solid var(--color-scanner)',
                 color:'var(--color-scanner)', padding:'9px 16px', cursor:'pointer',
-                fontFamily:'var(--font-mono)', fontSize:11, letterSpacing:'0.12em', textTransform:'uppercase',
+                fontFamily:'var(--font-mono)', fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase',
               }}>
                 GENERATE REPORT ▤
               </button>
@@ -135,9 +135,9 @@ export default function ScannerPage() {
               disabled={phase==='scanning'}
               style={{
                 background: phase==='scanning' ? 'var(--color-bg-elevated)' : 'var(--color-scanner)',
-                color: phase==='scanning' ? 'var(--color-text-secondary)' : '#050a06',
-                border:'none', padding:'10px 18px', cursor: phase==='scanning' ? 'not-allowed' : 'pointer',
-                fontFamily:'var(--font-mono)', fontSize:11, fontWeight:600, letterSpacing:'0.12em', textTransform:'uppercase',
+                color: phase==='scanning' ? 'var(--color-text-dim)' : '#050a06',
+                border:'none', padding:'9px 18px', cursor: phase==='scanning' ? 'not-allowed' : 'pointer',
+                fontFamily:'var(--font-mono)', fontSize:10, fontWeight:600, letterSpacing:'0.12em', textTransform:'uppercase',
                 transition:'all 0.15s',
               }}
             >
@@ -156,17 +156,17 @@ export default function ScannerPage() {
           <div className="bracket-card bracket-scanner fade-in-up" style={{ padding:'20px', marginBottom:20, position:'relative', overflow:'hidden' }}>
             <div className="scan-line" />
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-              <span className="mono" style={{ fontSize:11, color:'var(--color-scanner)', letterSpacing:'0.1em' }}>
+              <span className="mono" style={{ fontSize:10, color:'var(--color-scanner)', letterSpacing:'0.1em' }}>
                 SCANNING AWS ENVIRONMENT
               </span>
-              <span className="mono" style={{ fontSize:13, fontWeight:600, color:'var(--color-scanner)' }}>
+              <span className="mono" style={{ fontSize:12, fontWeight:600, color:'var(--color-scanner)' }}>
                 {progress}%
               </span>
             </div>
             <div className="tac-progress" style={{ height:4, marginBottom:12 }}>
               <div className="tac-progress-fill" style={{ width:`${progress}%`, background:'var(--color-scanner)' }} />
             </div>
-            <div className="mono terminal-success" style={{ fontSize:12 }}>
+            <div className="mono terminal-success" style={{ fontSize:11 }}>
               {SCAN_STAGES[stageIdx]}
             </div>
           </div>
@@ -177,9 +177,9 @@ export default function ScannerPage() {
           <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:12, marginBottom:20 }} className="fade-in-up">
             {/* Risk score */}
             <div className="bracket-card" style={{ padding:'14px 16px', borderColor:'var(--color-hemis)' }}>
-              <div className="mono" style={{ fontSize:10, letterSpacing:'0.12em', color:'var(--color-text-secondary)', textTransform:'uppercase', marginBottom:4 }}>RISK SCORE</div>
+              <div className="mono" style={{ fontSize:8, letterSpacing:'0.12em', color:'var(--color-text-dim)', textTransform:'uppercase', marginBottom:4 }}>RISK SCORE</div>
               <div className="mono" style={{ fontSize:26, fontWeight:700, color:'var(--color-hemis)' }}>{MOCK_SCAN.riskScore}</div>
-              <div style={{ fontSize:11, color:'var(--color-text-secondary)' }}>/100</div>
+              <div style={{ fontSize:10, color:'var(--color-text-dim)' }}>/100</div>
             </div>
             {/* Finding counts */}
             {[
@@ -189,9 +189,9 @@ export default function ScannerPage() {
               { label:'LOW',      count:lowCount,    color:'var(--color-low)'      },
             ].map(s => (
               <div key={s.label} className="bracket-card" style={{ padding:'14px 16px' }}>
-                <div className="mono" style={{ fontSize:10, letterSpacing:'0.12em', color:'var(--color-text-secondary)', textTransform:'uppercase', marginBottom:4 }}>{s.label}</div>
-                <div className="mono" style={{ fontSize:26, fontWeight:700, color:s.count>0 ? s.color : 'var(--color-text-secondary)' }}>{s.count}</div>
-                <div style={{ fontSize:11, color:'var(--color-text-secondary)' }}>findings</div>
+                <div className="mono" style={{ fontSize:8, letterSpacing:'0.12em', color:'var(--color-text-dim)', textTransform:'uppercase', marginBottom:4 }}>{s.label}</div>
+                <div className="mono" style={{ fontSize:26, fontWeight:700, color:s.count>0 ? s.color : 'var(--color-text-dim)' }}>{s.count}</div>
+                <div style={{ fontSize:10, color:'var(--color-text-dim)' }}>findings</div>
               </div>
             ))}
           </div>
@@ -207,11 +207,11 @@ export default function ScannerPage() {
               background:'var(--color-bg-elevated)',
             }}>
               <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                <span className="mono" style={{ fontSize:11, letterSpacing:'0.12em', color:'var(--color-text-secondary)', textTransform:'uppercase' }}>
+                <span className="mono" style={{ fontSize:10, letterSpacing:'0.12em', color:'var(--color-text-secondary)', textTransform:'uppercase' }}>
                   FINDINGS ({findings.length})
                 </span>
                 {remediatedCount > 0 && (
-                  <span className="mono" style={{ fontSize:10, color:'var(--color-scanner)', letterSpacing:'0.08em' }}>
+                  <span className="mono" style={{ fontSize:9, color:'var(--color-scanner)', letterSpacing:'0.08em' }}>
                     · {remediatedCount} REMEDIATED
                   </span>
                 )}
@@ -222,9 +222,9 @@ export default function ScannerPage() {
                   <button key={f} onClick={() => setFilter(f)} style={{
                     background: filter===f ? 'var(--color-bg-hover)' : 'transparent',
                     border:`1px solid ${filter===f ? 'var(--color-border-bright)' : 'var(--color-border)'}`,
-                    color: filter===f ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                    padding:'4px 10px', cursor:'pointer',
-                    fontFamily:'var(--font-mono)', fontSize:10, letterSpacing:'0.1em', textTransform:'uppercase',
+                    color: filter===f ? 'var(--color-text-primary)' : 'var(--color-text-dim)',
+                    padding:'3px 8px', cursor:'pointer',
+                    fontFamily:'var(--font-mono)', fontSize:9, letterSpacing:'0.1em', textTransform:'uppercase',
                   }}>
                     {f}
                   </button>
@@ -233,8 +233,8 @@ export default function ScannerPage() {
                 {phase==='done' && (
                   <button onClick={remediateAll} style={{
                     background:'var(--color-scanner-dim)', border:'1px solid var(--color-scanner)',
-                    color:'var(--color-scanner)', padding:'4px 12px', cursor:'pointer', marginLeft:8,
-                    fontFamily:'var(--font-mono)', fontSize:10, letterSpacing:'0.1em', textTransform:'uppercase',
+                    color:'var(--color-scanner)', padding:'3px 12px', cursor:'pointer', marginLeft:8,
+                    fontFamily:'var(--font-mono)', fontSize:9, letterSpacing:'0.1em', textTransform:'uppercase',
                   }}>
                     AUTO-REMEDIATE ALL ✓
                   </button>
@@ -249,7 +249,7 @@ export default function ScannerPage() {
               background:'var(--color-bg-base)',
             }}>
               {['SEVERITY','SERVICE','FINDING','RISK','ACTION'].map(h => (
-                <span key={h} className="mono" style={{ fontSize:10, letterSpacing:'0.14em', color:'var(--color-text-secondary)', textTransform:'uppercase' }}>
+                <span key={h} className="mono" style={{ fontSize:8, letterSpacing:'0.14em', color:'var(--color-text-dim)', textTransform:'uppercase' }}>
                   {h}
                 </span>
               ))}
@@ -277,12 +277,12 @@ export default function ScannerPage() {
                       <div style={{ display:'flex', alignItems:'center' }}>
                         <SevBadge sev={f.severity} />
                       </div>
-                      <span className="mono" style={{ fontSize:12, color:'var(--color-text-secondary)', alignSelf:'center' }}>{f.service}</span>
+                      <span className="mono" style={{ fontSize:11, color:'var(--color-text-secondary)', alignSelf:'center' }}>{f.service}</span>
                       <div style={{ alignSelf:'center', minWidth:0 }}>
-                        <div style={{ fontSize:13, color: isRem ? 'var(--color-scanner)' : 'var(--color-text-primary)', fontWeight:500 }}>
+                        <div style={{ fontSize:12, color: isRem ? 'var(--color-scanner)' : 'var(--color-text-primary)', fontWeight:500 }}>
                           {isRem && '✓ '}{f.title}
                         </div>
-                        <div className="mono" style={{ fontSize:11, color:'var(--color-text-secondary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', marginTop:1 }}>
+                        <div className="mono" style={{ fontSize:10, color:'var(--color-text-dim)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', marginTop:1 }}>
                           {f.resource}
                         </div>
                       </div>
@@ -297,15 +297,15 @@ export default function ScannerPage() {
                             style={{
                               background:'transparent',
                               border:`1px solid ${isRem_ ? 'var(--color-border)' : 'var(--color-scanner)'}`,
-                              color: isRem_ ? 'var(--color-text-secondary)' : 'var(--color-scanner)',
-                              padding:'4px 10px', cursor: isRem_ ? 'not-allowed' : 'pointer',
-                              fontFamily:'var(--font-mono)', fontSize:10, letterSpacing:'0.1em', textTransform:'uppercase',
+                              color: isRem_ ? 'var(--color-text-dim)' : 'var(--color-scanner)',
+                              padding:'3px 8px', cursor: isRem_ ? 'not-allowed' : 'pointer',
+                              fontFamily:'var(--font-mono)', fontSize:8, letterSpacing:'0.1em', textTransform:'uppercase',
                             }}
                           >
                             {isRem_ ? '...' : 'FIX'}
                           </button>
                         ) : (
-                          <span className="mono" style={{ fontSize:10, color:'var(--color-scanner)', letterSpacing:'0.1em' }}>✓ FIXED</span>
+                          <span className="mono" style={{ fontSize:8, color:'var(--color-scanner)', letterSpacing:'0.1em' }}>✓ FIXED</span>
                         )}
                       </div>
                     </div>
@@ -319,19 +319,19 @@ export default function ScannerPage() {
                       }} className="fade-in-up">
                         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, paddingTop:14 }}>
                           <div>
-                            <div className="mono" style={{ fontSize:10, letterSpacing:'0.12em', color:'var(--color-text-secondary)', textTransform:'uppercase', marginBottom:5 }}>DESCRIPTION</div>
-                            <p style={{ fontSize:13, color:'var(--color-text-primary)', margin:0, lineHeight:1.6 }}>{f.description}</p>
+                            <div className="mono" style={{ fontSize:9, letterSpacing:'0.12em', color:'var(--color-text-dim)', textTransform:'uppercase', marginBottom:5 }}>DESCRIPTION</div>
+                            <p style={{ fontSize:12, color:'var(--color-text-secondary)', margin:0, lineHeight:1.6 }}>{f.description}</p>
                           </div>
                           <div>
-                            <div className="mono" style={{ fontSize:10, letterSpacing:'0.12em', color:'var(--color-scanner)', textTransform:'uppercase', marginBottom:5 }}>REMEDIATION</div>
-                            <p style={{ fontSize:13, color:'var(--color-text-primary)', margin:0, lineHeight:1.6 }}>{f.remediation}</p>
+                            <div className="mono" style={{ fontSize:9, letterSpacing:'0.12em', color:'var(--color-scanner)', textTransform:'uppercase', marginBottom:5 }}>REMEDIATION</div>
+                            <p style={{ fontSize:12, color:'var(--color-text-secondary)', margin:0, lineHeight:1.6 }}>{f.remediation}</p>
                           </div>
                         </div>
                         <div style={{ marginTop:12, display:'flex', gap:6, flexWrap:'wrap' }}>
                           {f.compliance.map(c => (
-                            <span key={c} className="label-tag" style={{ fontSize:10, color:'var(--color-text-secondary)', borderColor:'var(--color-border)' }}>{c}</span>
+                            <span key={c} className="label-tag" style={{ fontSize:8, color:'var(--color-text-secondary)', borderColor:'var(--color-border)' }}>{c}</span>
                           ))}
-                          <span className="mono" style={{ fontSize:11, color:'var(--color-text-secondary)', marginLeft:4, alignSelf:'center' }}>
+                          <span className="mono" style={{ fontSize:10, color:'var(--color-text-dim)', marginLeft:4, alignSelf:'center' }}>
                             · {f.region} · {new Date(f.detectedAt).toLocaleTimeString()}
                           </span>
                         </div>
@@ -348,8 +348,8 @@ export default function ScannerPage() {
         {phase === 'idle' && (
           <div className="bracket-card" style={{ padding:'48px', textAlign:'center' }}>
             <div style={{ fontSize:32, marginBottom:12, color:'var(--color-scanner)', opacity:0.5 }}>◈</div>
-            <div className="display" style={{ fontSize:17, color:'var(--color-text-primary)', marginBottom:8 }}>Ready to scan your AWS environment</div>
-            <div className="mono" style={{ fontSize:12, color:'var(--color-text-secondary)' }}>
+            <div className="display" style={{ fontSize:16, color:'var(--color-text-secondary)', marginBottom:8 }}>Ready to scan your AWS environment</div>
+            <div className="mono" style={{ fontSize:11, color:'var(--color-text-dim)' }}>
               Click "RUN SCAN" to start — scans complete in under 60 seconds
             </div>
           </div>
@@ -364,18 +364,18 @@ export default function ScannerPage() {
           padding:'20px', flexShrink:0,
         }} className="fade-in-up">
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
-            <span className="mono" style={{ fontSize:11, letterSpacing:'0.15em', color:'var(--color-scanner)', textTransform:'uppercase' }}>
+            <span className="mono" style={{ fontSize:10, letterSpacing:'0.15em', color:'var(--color-scanner)', textTransform:'uppercase' }}>
               COMPLIANCE REPORT
             </span>
             <button onClick={() => setReportVisible(false)} style={{
               background:'transparent', border:'none', cursor:'pointer',
-              color:'var(--color-text-secondary)', fontSize:14,
+              color:'var(--color-text-dim)', fontSize:14,
             }}>✕</button>
           </div>
 
           {/* SOC2 */}
           <div className="bracket-card bracket-scanner" style={{ padding:'16px', marginBottom:12 }}>
-            <div className="mono" style={{ fontSize:10, letterSpacing:'0.12em', color:'var(--color-text-secondary)', textTransform:'uppercase', marginBottom:10 }}>SOC 2 TYPE II</div>
+            <div className="mono" style={{ fontSize:9, letterSpacing:'0.12em', color:'var(--color-text-dim)', textTransform:'uppercase', marginBottom:10 }}>SOC 2 TYPE II</div>
             <div className="mono" style={{ fontSize:28, fontWeight:700, color:'var(--color-hemis-orange)', marginBottom:4 }}>
               {MOCK_SCAN.complianceScore.soc2}%
             </div>
@@ -389,7 +389,7 @@ export default function ScannerPage() {
                   <span style={{ color: pass ? 'var(--color-scanner)' : 'var(--color-hemis)', fontSize:10, flexShrink:0 }}>
                     {pass ? '✓' : '✕'}
                   </span>
-                  <span style={{ fontSize:12, color:'var(--color-text-primary)' }}>{ctrl}</span>
+                  <span style={{ fontSize:11, color:'var(--color-text-secondary)' }}>{ctrl}</span>
                 </div>
               )
             })}
@@ -397,7 +397,7 @@ export default function ScannerPage() {
 
           {/* ISO 27001 */}
           <div className="bracket-card bracket-scanner" style={{ padding:'16px', marginBottom:12 }}>
-            <div className="mono" style={{ fontSize:10, letterSpacing:'0.12em', color:'var(--color-text-secondary)', textTransform:'uppercase', marginBottom:10 }}>ISO/IEC 27001:2022</div>
+            <div className="mono" style={{ fontSize:9, letterSpacing:'0.12em', color:'var(--color-text-dim)', textTransform:'uppercase', marginBottom:10 }}>ISO/IEC 27001:2022</div>
             <div className="mono" style={{ fontSize:28, fontWeight:700, color:'var(--color-hemis-orange)', marginBottom:4 }}>
               {MOCK_SCAN.complianceScore.iso27001}%
             </div>
@@ -411,7 +411,7 @@ export default function ScannerPage() {
                   <span style={{ color: pass ? 'var(--color-scanner)' : 'var(--color-hemis)', fontSize:10, flexShrink:0 }}>
                     {pass ? '✓' : '✕'}
                   </span>
-                  <span style={{ fontSize:12, color:'var(--color-text-primary)' }}>{ctrl}</span>
+                  <span style={{ fontSize:11, color:'var(--color-text-secondary)' }}>{ctrl}</span>
                 </div>
               )
             })}
@@ -421,7 +421,7 @@ export default function ScannerPage() {
           <button style={{
             width:'100%', background:'var(--color-scanner)', color:'#050a06',
             border:'none', padding:'11px 0', cursor:'pointer',
-            fontFamily:'var(--font-mono)', fontSize:11, fontWeight:600, letterSpacing:'0.12em', textTransform:'uppercase',
+            fontFamily:'var(--font-mono)', fontSize:10, fontWeight:600, letterSpacing:'0.12em', textTransform:'uppercase',
           }}>
             EXPORT AUDIT PACKAGE ↓
           </button>

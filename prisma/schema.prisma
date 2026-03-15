@@ -1,7 +1,7 @@
 // HemisX Console — Prisma Schema
 // Database: PostgreSQL (RDS)
-// Phase 1: Foundation — Auth, RBAC, Red Team persistence, Audit logging
-// Phase 1-SAST: Static Application Security Testing module
+// This schema is scaffolded for future production use.
+// The demo uses mock data from src/lib/mock-data/
 
 generator client {
   provider = "prisma-client-js"
@@ -20,104 +20,59 @@ model Organization {
   plan      Plan     @default(STARTER)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  users        User[]
-  scans        Scan[]
-  simulations  Simulation[]
-  alerts       Alert[]
-  awsAccounts  AwsAccount[]
-  redTeamScans RedTeamScan[]
-  auditLogs            AuditLog[]
-  sastScans            SastScan[]
-  githubInstallations  GitHubInstallation[]
+  users     User[]
+  scans     Scan[]
+  simulations Simulation[]
+  alerts    Alert[]
+  awsAccounts AwsAccount[]
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String
-  passwordHash String
-  role         UserRole @default(MEMBER)
-  orgId        String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  lastLoginAt  DateTime?
-
-  organization  Organization   @relation(fields: [orgId], references: [id])
-  refreshTokens RefreshToken[]
-  auditLogs     AuditLog[]
-  redTeamScans  RedTeamScan[]
-  sastScans     SastScan[]
-}
-
-model RefreshToken {
-  id        String    @id @default(cuid())
-  token     String    @unique
-  userId    String
-  expiresAt DateTime
-  createdAt DateTime  @default(now())
-  revokedAt DateTime?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
-
-// ─── Audit Logging ─────────────────────────────────────────────────────────
-model AuditLog {
-  id        String   @id @default(cuid())
-  orgId     String
-  userId    String?
-  action    String
-  resource  String?
-  meta      Json?
-  ipAddress String?
-  userAgent String?
-  createdAt DateTime @default(now())
-
-  org  Organization @relation(fields: [orgId], references: [id])
-  user User?        @relation(fields: [userId], references: [id])
-
-  @@index([orgId, createdAt])
-  @@index([userId])
+  id             String       @id @default(cuid())
+  email          String       @unique
+  name           String
+  role           UserRole     @default(MEMBER)
+  orgId          String
+  organization   Organization @relation(fields: [orgId], references: [id])
+  createdAt      DateTime     @default(now())
+  lastLoginAt    DateTime?
 }
 
 // ─── AWS Integration ───────────────────────────────────────────────────────
 model AwsAccount {
-  id        String   @id @default(cuid())
-  orgId     String
-  accountId String
-  alias     String?
-  roleArn   String
-  regions   String[]
-  createdAt DateTime @default(now())
-
+  id           String       @id @default(cuid())
+  orgId        String
   organization Organization @relation(fields: [orgId], references: [id])
+  accountId    String       // AWS Account ID
+  alias        String?
+  roleArn      String       // Cross-account IAM role ARN
+  regions      String[]     // Regions to scan
+  createdAt    DateTime     @default(now())
   scans        Scan[]
 }
 
-// ─── Cloud Scanner ─────────────────────────────────────────────────────────
+// ─── Scanner ───────────────────────────────────────────────────────────────
 model Scan {
-  id               String     @id @default(cuid())
+  id               String       @id @default(cuid())
   orgId            String
+  organization     Organization @relation(fields: [orgId], references: [id])
   awsAccountId     String
-  status           ScanStatus @default(PENDING)
+  awsAccount       AwsAccount   @relation(fields: [awsAccountId], references: [id])
+  status           ScanStatus   @default(PENDING)
   riskScore        Int?
-  resourcesScanned Int        @default(0)
-  findingsCount    Int        @default(0)
+  resourcesScanned Int          @default(0)
+  findingsCount    Int          @default(0)
   soc2Score        Int?
   iso27001Score    Int?
-  startedAt        DateTime   @default(now())
+  startedAt        DateTime     @default(now())
   completedAt      DateTime?
-
-  organization Organization @relation(fields: [orgId], references: [id])
-  awsAccount   AwsAccount   @relation(fields: [awsAccountId], references: [id])
-  findings     Finding[]
+  findings         Finding[]
 }
 
 model Finding {
   id          String        @id @default(cuid())
   scanId      String
+  scan        Scan          @relation(fields: [scanId], references: [id])
   severity    Severity
   service     String
   resource    String
@@ -130,70 +85,27 @@ model Finding {
   region      String
   detectedAt  DateTime      @default(now())
   resolvedAt  DateTime?
-
-  scan Scan @relation(fields: [scanId], references: [id])
 }
 
-// ─── Red Team ───────────────────────────────────────────────────────────────
-model RedTeamScan {
-  id           String     @id @default(cuid())
-  orgId        String
-  initiatedBy  String
-  engagementId String
-  target       String
-  scope        String[]
-  status       ScanStatus @default(PENDING)
-  progress     Int        @default(0)
-  startedAt    DateTime   @default(now())
-  completedAt  DateTime?
-
-  org      Organization     @relation(fields: [orgId], references: [id])
-  user     User             @relation(fields: [initiatedBy], references: [id])
-  findings RedTeamFinding[]
-
-  @@index([orgId, startedAt])
-}
-
-model RedTeamFinding {
-  id                String        @id @default(cuid())
-  scanId            String
-  type              String
-  severity          Severity
-  cvssScore         Float
-  affectedComponent String
-  description       String        @db.Text
-  remediation       String        @db.Text
-  proofOfConcept    String?       @db.Text
-  mitreId           String?
-  status            FindingStatus @default(OPEN)
-  detectedAt        DateTime      @default(now())
-  resolvedAt        DateTime?
-
-  scan RedTeamScan @relation(fields: [scanId], references: [id])
-
-  @@index([scanId])
-  @@index([severity])
-}
-
-// ─── HEMIS Simulation ───────────────────────────────────────────────────────
+// ─── HEMIS ─────────────────────────────────────────────────────────────────
 model Simulation {
-  id            String    @id @default(cuid())
-  orgId         String
-  prompt        String    @db.Text
-  status        SimStatus @default(PENDING)
-  findingsCount Int       @default(0)
-  criticalCount Int       @default(0)
-  duration      String?
-  startedAt     DateTime  @default(now())
-  completedAt   DateTime?
-
+  id           String       @id @default(cuid())
+  orgId        String
   organization Organization @relation(fields: [orgId], references: [id])
+  prompt       String       @db.Text
+  status       SimStatus    @default(PENDING)
+  findingsCount Int         @default(0)
+  criticalCount Int         @default(0)
+  duration     String?
+  startedAt    DateTime     @default(now())
+  completedAt  DateTime?
   steps        SimStep[]
 }
 
 model SimStep {
   id           String     @id @default(cuid())
   simulationId String
+  simulation   Simulation @relation(fields: [simulationId], references: [id])
   seq          Int
   phase        String
   technique    String
@@ -202,157 +114,34 @@ model SimStep {
   result       StepResult
   detail       String     @db.Text
   timestamp    DateTime   @default(now())
-
-  simulation Simulation @relation(fields: [simulationId], references: [id])
 }
 
 // ─── Blue Team ─────────────────────────────────────────────────────────────
 model Alert {
-  id              String      @id @default(cuid())
+  id              String       @id @default(cuid())
   orgId           String
+  organization    Organization @relation(fields: [orgId], references: [id])
   severity        Severity
   title           String
-  summary         String      @db.Text
+  summary         String       @db.Text
   source          String
   resource        String
   ipAddress       String?
   region          String
-  status          AlertStatus @default(NEW)
+  status          AlertStatus  @default(NEW)
   tactics         String[]
-  autoResponded   Boolean     @default(false)
+  autoResponded   Boolean      @default(false)
   responseActions String[]
-  detectedAt      DateTime    @default(now())
+  detectedAt      DateTime     @default(now())
   resolvedAt      DateTime?
-
-  organization Organization @relation(fields: [orgId], references: [id])
 }
 
 // ─── Enums ─────────────────────────────────────────────────────────────────
-
-enum Plan {
-  STARTER
-  PROFESSIONAL
-  ENTERPRISE
-}
-
-enum UserRole {
-  OWNER
-  ADMIN
-  ANALYST
-  MEMBER
-  VIEWER
-}
-
-enum Severity {
-  CRITICAL
-  HIGH
-  MEDIUM
-  LOW
-  INFO
-}
-
-enum FindingStatus {
-  OPEN
-  REMEDIATED
-  ACKNOWLEDGED
-  IN_PROGRESS
-}
-
-enum AlertStatus {
-  NEW
-  INVESTIGATING
-  CONTAINED
-  RESOLVED
-}
-
-enum ScanStatus {
-  PENDING
-  RUNNING
-  COMPLETED
-  FAILED
-}
-
-enum SimStatus {
-  PENDING
-  RUNNING
-  COMPLETED
-  FAILED
-}
-
-enum StepResult {
-  SUCCESS
-  FAILED
-  PARTIAL
-}
-
-// ─── SAST ──────────────────────────────────────────────────────────────────
-
-model SastScan {
-  id           String     @id @default(cuid())
-  orgId        String
-  initiatedBy  String
-  name         String     // user-given name or filename
-  language     String     // detected: js, ts, py, php, java, go, ruby, unknown
-  linesOfCode  Int        @default(0)
-  status       ScanStatus @default(PENDING)
-  filesScanned Int        @default(0)
-  duration     Int?       // ms
-  startedAt    DateTime   @default(now())
-  completedAt  DateTime?
-
-  // Summary counts (denormalised for fast dashboard queries)
-  criticalCount Int @default(0)
-  highCount     Int @default(0)
-  mediumCount   Int @default(0)
-  lowCount      Int @default(0)
-  infoCount     Int @default(0)
-
-  org      Organization @relation(fields: [orgId], references: [id])
-  user     User         @relation(fields: [initiatedBy], references: [id])
-  findings SastFinding[]
-
-  @@index([orgId, startedAt])
-}
-
-model SastFinding {
-  id          String        @id @default(cuid())
-  scanId      String
-  ruleId      String        // e.g. "SAST-SQL-001"
-  ruleName    String
-  severity    Severity
-  confidence  String        // HIGH | MEDIUM | LOW
-  language    String
-  filePath    String
-  lineStart   Int
-  lineEnd     Int
-  codeSnippet String        @db.Text
-  description String        @db.Text
-  remediation String        @db.Text
-  owasp       String        // "A03:2021 – Injection"
-  cwe         String        // "CWE-89"
-  category    String        // Injection | Cryptography | Auth | etc.
-  status      FindingStatus @default(OPEN)
-  falsePositive Boolean     @default(false)
-  detectedAt  DateTime      @default(now())
-
-  scan SastScan @relation(fields: [scanId], references: [id])
-
-  @@index([scanId])
-  @@index([severity])
-  @@index([ruleId])
-}
-
-// ─── GitHub App Integration ───────────────────────────────────────────────
-model GitHubInstallation {
-  id             String   @id @default(cuid())
-  orgId          String
-  installationId Int      @unique
-  accountLogin   String   @default("")
-  accountType    String   @default("Organization") // "Organization" or "User"
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  org Organization @relation(fields: [orgId], references: [id])
-
-  @@index([orgId])
-}
+enum Plan        { STARTER PROFESSIONAL ENTERPRISE }
+enum UserRole    { OWNER ADMIN ANALYST MEMBER VIEWER }
+enum Severity    { CRITICAL HIGH MEDIUM LOW INFO }
+enum FindingStatus { OPEN REMEDIATED ACKNOWLEDGED IN_PROGRESS }
+enum AlertStatus { NEW INVESTIGATING CONTAINED RESOLVED }
+enum ScanStatus  { PENDING RUNNING COMPLETED FAILED }
+enum SimStatus   { PENDING RUNNING COMPLETED FAILED }
+enum StepResult  { SUCCESS FAILED PARTIAL }
