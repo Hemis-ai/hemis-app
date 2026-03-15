@@ -69,8 +69,8 @@ export async function enrichScanFindings(scanId: string, callbacks: EnrichmentCa
   // Stage 2: Executive summary
   callbacks.onProgress?.(85, 'Generating executive summary...')
   try {
-    const criticalFindings = findings.filter((f) => f.severity === 'CRITICAL').slice(0, 5).map((f) => ({ title: f.title, url: f.affectedUrl }))
-    const highFindings = findings.filter((f) => f.severity === 'HIGH').slice(0, 5).map((f) => ({ title: f.title, url: f.affectedUrl }))
+    const criticalFindings = findings.filter((f: typeof findings[number]) => f.severity === 'CRITICAL').slice(0, 5).map((f: typeof findings[number]) => ({ title: f.title, url: f.affectedUrl }))
+    const highFindings = findings.filter((f: typeof findings[number]) => f.severity === 'HIGH').slice(0, 5).map((f: typeof findings[number]) => ({ title: f.title, url: f.affectedUrl }))
 
     const summary = await generateExecutiveSummary({
       scanName: scan.name, targetUrl: scan.targetUrl, scanProfileName: scan.scanProfile,

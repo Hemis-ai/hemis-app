@@ -19,7 +19,7 @@ const PRODUCTS = [
     href: '/dashboard/scanner',
     color: 'var(--color-scanner)',
     icon: '◈',
-  },
+  }] : []),
   {
     id: 'hemis',
     label: 'HEMIS',
@@ -27,8 +27,8 @@ const PRODUCTS = [
     color: 'var(--color-hemis)',
     icon: '◉',
     children: [
-      { id: 'sast', label: 'SAST', href: '/dashboard/sast', icon: '⬡', color: 'var(--color-hemis)' },
-      { id: 'dast', label: 'DAST', href: '/dashboard/dast', icon: '◇', color: 'var(--color-dast)' },
+      ...(FF.sast ? [{ id: 'sast', label: 'SAST', href: '/dashboard/sast', icon: '⬡', color: 'var(--color-hemis)' }] : []),
+      ...(FF.dast ? [{ id: 'dast', label: 'DAST', href: '/dashboard/dast', icon: '◇', color: 'var(--color-dast)' }] : []),
     ],
   },
   ...(FF.blueteam ? [{
@@ -37,7 +37,7 @@ const PRODUCTS = [
     href: '/dashboard/blueteam',
     color: 'var(--color-blueteam)',
     icon: '◎',
-  },
+  }] : []),
 ]
 
 const NAV_ITEMS = [
