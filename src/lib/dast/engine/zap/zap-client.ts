@@ -1,4 +1,3 @@
-import axios, { AxiosInstance, AxiosError } from 'axios'
 import type {
   ZapResultResponse, ZapSpiderStartResponse, ZapSpiderStatusResponse,
   ZapSpiderResultsResponse, ZapAjaxSpiderStatusResponse,
@@ -18,192 +17,219 @@ export class ZapApiError extends Error {
   }
 }
 
+/**
+ * ZAP REST API client — uses native fetch (no axios dependency).
+ * ZAP uses query-string params on GET requests for everything.
+ */
 export class ZapClient {
-  private readonly http: AxiosInstance
+  private readonly baseUrl: string
+  private readonly apiKey: string | null
+  private readonly timeout: number
 
   constructor(baseUrl?: string, apiKey?: string, timeout?: number) {
-    this.http = axios.create({
-      baseURL: baseUrl || process.env.ZAP_URL || 'http://localhost:8090',
-      timeout: timeout || 30000,
-      params: apiKey ? { apikey: apiKey } : (process.env.ZAP_API_KEY ? { apikey: process.env.ZAP_API_KEY } : {}),
-    })
+    this.baseUrl = (baseUrl || process.env.ZAP_URL || 'http://localhost:8090').replace(/\/$/, '')
+    this.apiKey = apiKey || process.env.ZAP_API_KEY || null
+    this.timeout = timeout || 30000
   }
 
-  private extractError(error: unknown): string {
-    if (error instanceof AxiosError) return error.message
-    if (error instanceof Error) return error.message
-    return 'Unknown error'
+  /** Build URL with query params, injecting apikey when configured */
+  private buildUrl(path: string, params?: Record<string, string>): string {
+    const url = new URL(path, this.baseUrl)
+    if (this.apiKey) url.searchParams.set('apikey', this.apiKey)
+    if (params) {
+      for (const [k, v] of Object.entries(params)) {
+        if (v !== undefined && v !== null) url.searchParams.set(k, v)
+      }
+    }
+    return url.toString()
   }
+
+  /** Make a GET request to ZAP and return the parsed JSON */
+  private async request<T>(operation: string, path: string, params?: Record<string, string>): Promise<T> {
+    const url = this.buildUrl(path, params)
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), this.timeout)
+
+    try {
+      const res = await fetch(url, { signal: controller.signal })
+      if (!res.ok) {
+        const body = await res.text().catch(() => '')
+        throw new ZapApiError(operation, `HTTP ${res.status}: ${body || res.statusText}`)
+      }
+      return (await res.json()) as T
+    } catch (error) {
+      if (error instanceof ZapApiError) throw error
+      const msg = error instanceof Error ? error.message : 'Unknown error'
+      throw new ZapApiError(operation, msg, error)
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  // ─── Core ───────────────────────────────────────────────────────────────
 
   async getVersion(): Promise<string> {
-    try {
-      const { data } = await this.http.get<ZapVersionResponse>('/JSON/core/view/version/')
-      return data.version
-    } catch (error) { throw new ZapApiError('getVersion', this.extractError(error), error) }
+    const data = await this.request<ZapVersionResponse>('getVersion', '/JSON/core/view/version/')
+    return data.version
   }
 
   async newSession(name?: string, overwrite = true): Promise<void> {
-    try {
-      await this.http.get<ZapResultResponse>('/JSON/core/action/newSession/', {
-        params: { name: name ?? '', overwrite: overwrite.toString() },
-      })
-    } catch (error) { throw new ZapApiError('newSession', this.extractError(error), error) }
+    await this.request<ZapResultResponse>('newSession', '/JSON/core/action/newSession/', {
+      name: name ?? '', overwrite: overwrite.toString(),
+    })
   }
 
+  // ─── Context ────────────────────────────────────────────────────────────
+
   async createContext(name: string): Promise<string> {
-    try {
-      const { data } = await this.http.get<ZapContextCreateResponse>('/JSON/context/action/newContext/', { params: { contextName: name } })
-      return data.contextId
-    } catch (error) { throw new ZapApiError('createContext', this.extractError(error), error) }
+    const data = await this.request<ZapContextCreateResponse>('createContext', '/JSON/context/action/newContext/', { contextName: name })
+    return data.contextId
   }
 
   async includeInContext(contextName: string, regex: string): Promise<void> {
-    try {
-      await this.http.get<ZapResultResponse>('/JSON/context/action/includeInContext/', { params: { contextName, regex } })
-    } catch (error) { throw new ZapApiError('includeInContext', this.extractError(error), error) }
+    await this.request<ZapResultResponse>('includeInContext', '/JSON/context/action/includeInContext/', { contextName, regex })
   }
 
   async excludeFromContext(contextName: string, regex: string): Promise<void> {
-    try {
-      await this.http.get<ZapResultResponse>('/JSON/context/action/excludeFromContext/', { params: { contextName, regex } })
-    } catch (error) { throw new ZapApiError('excludeFromContext', this.extractError(error), error) }
+    await this.request<ZapResultResponse>('excludeFromContext', '/JSON/context/action/excludeFromContext/', { contextName, regex })
   }
 
+  // ─── Spider ─────────────────────────────────────────────────────────────
+
   async startSpider(url: string, contextName?: string, maxChildren?: number): Promise<string> {
-    try {
-      const { data } = await this.http.get<ZapSpiderStartResponse>('/JSON/spider/action/scan/', {
-        params: { url, ...(contextName && { contextName }), ...(maxChildren !== undefined && { maxChildren: maxChildren.toString() }) },
-      })
-      return data.scan
-    } catch (error) { throw new ZapApiError('startSpider', this.extractError(error), error) }
+    const params: Record<string, string> = { url }
+    if (contextName) params.contextName = contextName
+    if (maxChildren !== undefined) params.maxChildren = maxChildren.toString()
+
+    const data = await this.request<ZapSpiderStartResponse>('startSpider', '/JSON/spider/action/scan/', params)
+    return data.scan
   }
 
   async getSpiderStatus(scanId: string): Promise<number> {
-    try {
-      const { data } = await this.http.get<ZapSpiderStatusResponse>('/JSON/spider/view/status/', { params: { scanId } })
-      return parseInt(data.status, 10)
-    } catch (error) { throw new ZapApiError('getSpiderStatus', this.extractError(error), error) }
+    const data = await this.request<ZapSpiderStatusResponse>('getSpiderStatus', '/JSON/spider/view/status/', { scanId })
+    return parseInt(data.status, 10)
   }
 
   async getSpiderResults(scanId: string): Promise<string[]> {
-    try {
-      const { data } = await this.http.get<ZapSpiderResultsResponse>('/JSON/spider/view/results/', { params: { scanId } })
-      return data.results
-    } catch (error) { throw new ZapApiError('getSpiderResults', this.extractError(error), error) }
+    const data = await this.request<ZapSpiderResultsResponse>('getSpiderResults', '/JSON/spider/view/results/', { scanId })
+    return data.results
   }
 
   async stopSpider(scanId: string): Promise<void> {
-    try { await this.http.get<ZapResultResponse>('/JSON/spider/action/stop/', { params: { scanId } }) }
-    catch (error) { throw new ZapApiError('stopSpider', this.extractError(error), error) }
+    await this.request<ZapResultResponse>('stopSpider', '/JSON/spider/action/stop/', { scanId })
   }
 
+  // ─── AJAX Spider ────────────────────────────────────────────────────────
+
   async startAjaxSpider(url: string, contextName?: string): Promise<void> {
-    try {
-      await this.http.get<ZapResultResponse>('/JSON/ajaxSpider/action/scan/', {
-        params: { url, ...(contextName && { contextName }) },
-      })
-    } catch (error) { throw new ZapApiError('startAjaxSpider', this.extractError(error), error) }
+    const params: Record<string, string> = { url }
+    if (contextName) params.contextName = contextName
+    await this.request<ZapResultResponse>('startAjaxSpider', '/JSON/ajaxSpider/action/scan/', params)
   }
 
   async getAjaxSpiderStatus(): Promise<string> {
-    try {
-      const { data } = await this.http.get<ZapAjaxSpiderStatusResponse>('/JSON/ajaxSpider/view/status/')
-      return data.status
-    } catch (error) { throw new ZapApiError('getAjaxSpiderStatus', this.extractError(error), error) }
+    const data = await this.request<ZapAjaxSpiderStatusResponse>('getAjaxSpiderStatus', '/JSON/ajaxSpider/view/status/')
+    return data.status
   }
 
   async stopAjaxSpider(): Promise<void> {
-    try { await this.http.get<ZapResultResponse>('/JSON/ajaxSpider/action/stop/') }
-    catch (error) { throw new ZapApiError('stopAjaxSpider', this.extractError(error), error) }
+    await this.request<ZapResultResponse>('stopAjaxSpider', '/JSON/ajaxSpider/action/stop/')
   }
 
+  // ─── Active Scan ────────────────────────────────────────────────────────
+
   async startActiveScan(url: string, contextId?: string, recurse = true, scanPolicyName?: string): Promise<string> {
-    try {
-      const { data } = await this.http.get<ZapActiveScanStartResponse>('/JSON/ascan/action/scan/', {
-        params: { url, recurse: recurse.toString(), ...(contextId && { contextId }), ...(scanPolicyName && { scanPolicyName }) },
-      })
-      return data.scan
-    } catch (error) { throw new ZapApiError('startActiveScan', this.extractError(error), error) }
+    const params: Record<string, string> = { url, recurse: recurse.toString() }
+    if (contextId) params.contextId = contextId
+    if (scanPolicyName) params.scanPolicyName = scanPolicyName
+
+    const data = await this.request<ZapActiveScanStartResponse>('startActiveScan', '/JSON/ascan/action/scan/', params)
+    return data.scan
   }
 
   async getActiveScanStatus(scanId: string): Promise<number> {
-    try {
-      const { data } = await this.http.get<ZapActiveScanStatusResponse>('/JSON/ascan/view/status/', { params: { scanId } })
-      return parseInt(data.status, 10)
-    } catch (error) { throw new ZapApiError('getActiveScanStatus', this.extractError(error), error) }
+    const data = await this.request<ZapActiveScanStatusResponse>('getActiveScanStatus', '/JSON/ascan/view/status/', { scanId })
+    return parseInt(data.status, 10)
   }
 
   async pauseActiveScan(scanId: string): Promise<void> {
-    try { await this.http.get<ZapResultResponse>('/JSON/ascan/action/pause/', { params: { scanId } }) }
-    catch (error) { throw new ZapApiError('pauseActiveScan', this.extractError(error), error) }
+    await this.request<ZapResultResponse>('pauseActiveScan', '/JSON/ascan/action/pause/', { scanId })
   }
 
   async resumeActiveScan(scanId: string): Promise<void> {
-    try { await this.http.get<ZapResultResponse>('/JSON/ascan/action/resume/', { params: { scanId } }) }
-    catch (error) { throw new ZapApiError('resumeActiveScan', this.extractError(error), error) }
+    await this.request<ZapResultResponse>('resumeActiveScan', '/JSON/ascan/action/resume/', { scanId })
   }
 
   async stopActiveScan(scanId: string): Promise<void> {
-    try { await this.http.get<ZapResultResponse>('/JSON/ascan/action/stop/', { params: { scanId } }) }
-    catch (error) { throw new ZapApiError('stopActiveScan', this.extractError(error), error) }
+    await this.request<ZapResultResponse>('stopActiveScan', '/JSON/ascan/action/stop/', { scanId })
   }
+
+  // ─── Alerts ─────────────────────────────────────────────────────────────
 
   async getAlerts(baseUrl?: string, start?: number, count?: number): Promise<ZapAlertsResponse> {
-    try {
-      const { data } = await this.http.get<ZapAlertsResponse>('/JSON/alert/view/alerts/', {
-        params: { ...(baseUrl && { baseurl: baseUrl }), ...(start !== undefined && { start: start.toString() }), ...(count !== undefined && { count: count.toString() }) },
-      })
-      return data
-    } catch (error) { throw new ZapApiError('getAlerts', this.extractError(error), error) }
+    const params: Record<string, string> = {}
+    if (baseUrl) params.baseurl = baseUrl
+    if (start !== undefined) params.start = start.toString()
+    if (count !== undefined) params.count = count.toString()
+
+    return this.request<ZapAlertsResponse>('getAlerts', '/JSON/alert/view/alerts/', params)
   }
 
+  // ─── Authentication ─────────────────────────────────────────────────────
+
   async setAuthenticationMethod(contextId: string, authMethodName: string, authMethodConfigParams: string): Promise<void> {
-    try { await this.http.get<ZapResultResponse>('/JSON/authentication/action/setAuthenticationMethod/', { params: { contextId, authMethodName, authMethodConfigParams } }) }
-    catch (error) { throw new ZapApiError('setAuthenticationMethod', this.extractError(error), error) }
+    await this.request<ZapResultResponse>('setAuthenticationMethod', '/JSON/authentication/action/setAuthenticationMethod/', {
+      contextId, authMethodName, authMethodConfigParams,
+    })
   }
 
   async setLoggedInIndicator(contextId: string, loggedInIndicatorRegex: string): Promise<void> {
-    try { await this.http.get<ZapResultResponse>('/JSON/authentication/action/setLoggedInIndicator/', { params: { contextId, loggedInIndicatorRegex } }) }
-    catch (error) { throw new ZapApiError('setLoggedInIndicator', this.extractError(error), error) }
+    await this.request<ZapResultResponse>('setLoggedInIndicator', '/JSON/authentication/action/setLoggedInIndicator/', {
+      contextId, loggedInIndicatorRegex,
+    })
   }
 
+  // ─── Users ──────────────────────────────────────────────────────────────
+
   async createUser(contextId: string, name: string): Promise<string> {
-    try {
-      const { data } = await this.http.get<ZapNewUserResponse>('/JSON/users/action/newUser/', { params: { contextId, name } })
-      return data.userId
-    } catch (error) { throw new ZapApiError('createUser', this.extractError(error), error) }
+    const data = await this.request<ZapNewUserResponse>('createUser', '/JSON/users/action/newUser/', { contextId, name })
+    return data.userId
   }
 
   async setAuthCredentials(contextId: string, userId: string, authCredentialsConfigParams: string): Promise<void> {
-    try { await this.http.get<ZapResultResponse>('/JSON/users/action/setAuthenticationCredentials/', { params: { contextId, userId, authCredentialsConfigParams } }) }
-    catch (error) { throw new ZapApiError('setAuthCredentials', this.extractError(error), error) }
+    await this.request<ZapResultResponse>('setAuthCredentials', '/JSON/users/action/setAuthenticationCredentials/', {
+      contextId, userId, authCredentialsConfigParams,
+    })
   }
 
   async setUserEnabled(contextId: string, userId: string, enabled: boolean): Promise<void> {
-    try { await this.http.get<ZapResultResponse>('/JSON/users/action/setUserEnabled/', { params: { contextId, userId, enabled: enabled.toString() } }) }
-    catch (error) { throw new ZapApiError('setUserEnabled', this.extractError(error), error) }
+    await this.request<ZapResultResponse>('setUserEnabled', '/JSON/users/action/setUserEnabled/', {
+      contextId, userId, enabled: enabled.toString(),
+    })
   }
 
   async setForcedUser(contextId: string, userId: string): Promise<void> {
-    try { await this.http.get<ZapResultResponse>('/JSON/forcedUser/action/setForcedUser/', { params: { contextId, userId } }) }
-    catch (error) { throw new ZapApiError('setForcedUser', this.extractError(error), error) }
+    await this.request<ZapResultResponse>('setForcedUser', '/JSON/forcedUser/action/setForcedUser/', {
+      contextId, userId,
+    })
   }
 
   async setForcedUserModeEnabled(enabled: boolean): Promise<void> {
-    try { await this.http.get<ZapResultResponse>('/JSON/forcedUser/action/setForcedUserModeEnabled/', { params: { boolean: enabled.toString() } }) }
-    catch (error) { throw new ZapApiError('setForcedUserModeEnabled', this.extractError(error), error) }
+    await this.request<ZapResultResponse>('setForcedUserModeEnabled', '/JSON/forcedUser/action/setForcedUserModeEnabled/', {
+      boolean: enabled.toString(),
+    })
   }
 
+  // ─── Replacer ───────────────────────────────────────────────────────────
+
   async addReplacerRule(description: string, enabled: boolean, matchType: string, matchRegex: boolean, matchString: string, replacement: string, initiators?: string): Promise<void> {
-    try {
-      await this.http.get<ZapResultResponse>('/JSON/replacer/action/addRule/', {
-        params: { description, enabled: enabled.toString(), matchType, matchRegex: matchRegex.toString(), matchString, replacement, initiators: initiators ?? '' },
-      })
-    } catch (error) { throw new ZapApiError('addReplacerRule', this.extractError(error), error) }
+    await this.request<ZapResultResponse>('addReplacerRule', '/JSON/replacer/action/addRule/', {
+      description, enabled: enabled.toString(), matchType, matchRegex: matchRegex.toString(),
+      matchString, replacement, initiators: initiators ?? '',
+    })
   }
 
   async removeReplacerRule(description: string): Promise<void> {
-    try { await this.http.get<ZapResultResponse>('/JSON/replacer/action/removeRule/', { params: { description } }) }
-    catch (error) { throw new ZapApiError('removeReplacerRule', this.extractError(error), error) }
+    await this.request<ZapResultResponse>('removeReplacerRule', '/JSON/replacer/action/removeRule/', { description })
   }
 }
