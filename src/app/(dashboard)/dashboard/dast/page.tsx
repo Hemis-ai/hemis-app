@@ -125,6 +125,9 @@ export default function DastPage() {
   const [reportSuccess, setReportSuccess] = useState<string | null>(null)
   const [reportError, setReportError] = useState<string | null>(null)
 
+  // ── Scan completion state ──
+  const [lastCompletedScanId, setLastCompletedScanId] = useState<string | null>(null)
+
   // ── Build auth config from form state ──
   function buildAuthConfig() {
     switch (authType) {
@@ -144,30 +147,91 @@ export default function DastPage() {
       const res = await fetch('/api/dast/scans')
       if (res.ok) {
         const data = await res.json()
-        setScans(data.scans ?? [])
+        const apiScans = data.scans ?? []
+        if (apiScans.length > 0) {
+          // Merge API scans with any in-memory mock scans
+          setScans(prev => {
+            const mockScans = prev.filter((s: DastScan) => s.id.startsWith('mock-'))
+            return [...apiScans, ...mockScans]
+          })
+        }
       }
     } catch { /* API unavailable */ }
   }, [])
 
   // ── Fetch findings for selected scan ──
   const fetchFindings = useCallback(async (scanId: string) => {
+    // Skip API call for mock scans — their findings are already in state
+    if (scanId.startsWith('mock-')) return
     try {
       const res = await fetch(`/api/dast/findings?scanId=${scanId}`)
       if (res.ok) {
         const data = await res.json()
-        setFindings((prev) => {
-          const otherFindings = prev.filter((f) => f.scanId !== scanId)
-          return [...otherFindings, ...(data.findings ?? [])]
-        })
+        const apiFnd = data.findings ?? []
+        if (apiFnd.length > 0) {
+          setFindings((prev) => {
+            const otherFindings = prev.filter((f) => f.scanId !== scanId)
+            return [...otherFindings, ...apiFnd]
+          })
+        }
       }
     } catch { /* API unavailable */ }
   }, [])
 
+  // ── Client-side comparison for mock scans ──
+  function compareScansLocally(baselineId: string, currentId: string) {
+    const baseScan = scans.find(s => s.id === baselineId)
+    const currScan = scans.find(s => s.id === currentId)
+    if (!baseScan || !currScan) return null
+
+    const baseFindings = findings.filter(f => f.scanId === baselineId)
+    const currFindings = findings.filter(f => f.scanId === currentId)
+
+    // Fingerprint-based matching: type + affectedUrl + affectedParameter
+    const fingerprint = (f: DastFinding) => `${f.type}|${f.affectedUrl}|${f.affectedParameter ?? ''}`
+    const baseMap = new Map(baseFindings.map(f => [fingerprint(f), f]))
+    const currMap = new Map(currFindings.map(f => [fingerprint(f), f]))
+
+    const newFindings = currFindings.filter(f => !baseMap.has(fingerprint(f)))
+    const resolvedFindings = baseFindings.filter(f => !currMap.has(fingerprint(f)))
+    const persistentFindings = currFindings.filter(f => baseMap.has(fingerprint(f)))
+
+    const deltas = [
+      { metric: 'Total Findings', baseline: baseFindings.length, current: currFindings.length, delta: currFindings.length - baseFindings.length, direction: currFindings.length < baseFindings.length ? 'improved' : currFindings.length > baseFindings.length ? 'regressed' : 'unchanged', percentage: baseFindings.length ? Math.round(((currFindings.length - baseFindings.length) / baseFindings.length) * 100) : 0 },
+      { metric: 'Critical', baseline: baseScan.criticalCount ?? 0, current: currScan.criticalCount ?? 0, delta: (currScan.criticalCount ?? 0) - (baseScan.criticalCount ?? 0), direction: (currScan.criticalCount ?? 0) < (baseScan.criticalCount ?? 0) ? 'improved' : (currScan.criticalCount ?? 0) > (baseScan.criticalCount ?? 0) ? 'regressed' : 'unchanged', percentage: (baseScan.criticalCount ?? 0) ? Math.round((((currScan.criticalCount ?? 0) - (baseScan.criticalCount ?? 0)) / (baseScan.criticalCount ?? 1)) * 100) : 0 },
+      { metric: 'High', baseline: baseScan.highCount ?? 0, current: currScan.highCount ?? 0, delta: (currScan.highCount ?? 0) - (baseScan.highCount ?? 0), direction: (currScan.highCount ?? 0) < (baseScan.highCount ?? 0) ? 'improved' : (currScan.highCount ?? 0) > (baseScan.highCount ?? 0) ? 'regressed' : 'unchanged', percentage: (baseScan.highCount ?? 0) ? Math.round((((currScan.highCount ?? 0) - (baseScan.highCount ?? 0)) / (baseScan.highCount ?? 1)) * 100) : 0 },
+      { metric: 'Risk Score', baseline: baseScan.riskScore ?? 0, current: currScan.riskScore ?? 0, delta: (currScan.riskScore ?? 0) - (baseScan.riskScore ?? 0), direction: (currScan.riskScore ?? 0) < (baseScan.riskScore ?? 0) ? 'improved' : (currScan.riskScore ?? 0) > (baseScan.riskScore ?? 0) ? 'regressed' : 'unchanged', percentage: (baseScan.riskScore ?? 0) ? Math.round((((currScan.riskScore ?? 0) - (baseScan.riskScore ?? 0)) / (baseScan.riskScore ?? 1)) * 100) : 0 },
+    ]
+
+    const totalDelta = deltas.reduce((acc, d) => acc + (d.direction === 'improved' ? 1 : d.direction === 'regressed' ? -1 : 0), 0)
+    const overallTrend = totalDelta > 0 ? 'improved' : totalDelta < 0 ? 'regressed' : 'unchanged'
+
+    return {
+      summary: `Compared "${baseScan.name}" → "${currScan.name}": ${newFindings.length} new, ${resolvedFindings.length} resolved, ${persistentFindings.length} persistent findings.`,
+      overallTrend,
+      trendScore: totalDelta * 10,
+      deltas,
+      findingDiff: { newFindings, resolvedFindings, persistentFindings },
+    }
+  }
+
   // ── Run comparison ──
   const runComparison = useCallback(async () => {
     if (!compBaselineId || !compCurrentId || compBaselineId === compCurrentId) return
+    const baseIsMock = compBaselineId.startsWith('mock-')
+    const currentIsMock = compCurrentId.startsWith('mock-')
+
     setCompLoading(true)
     setCompResult(null)
+
+    // If either scan is mock, do client-side comparison
+    if (baseIsMock || currentIsMock) {
+      const result = compareScansLocally(compBaselineId, compCurrentId)
+      setCompResult(result ?? { _mockWarning: true })
+      setCompLoading(false)
+      return
+    }
+
     try {
       const res = await fetch('/api/dast/compare', {
         method: 'POST',
@@ -180,7 +244,8 @@ export default function DastPage() {
       }
     } catch { /* ignore */ }
     setCompLoading(false)
-  }, [compBaselineId, compCurrentId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compBaselineId, compCurrentId, scans, findings])
 
   useEffect(() => {
     fetchScans()
@@ -232,6 +297,10 @@ export default function DastPage() {
               if (scan.status === 'COMPLETED' || scan.status === 'FAILED') {
                 if (pollRef.current) clearInterval(pollRef.current)
                 pollRef.current = null
+                if (scan.status === 'COMPLETED') {
+                  setLastCompletedScanId(scan.id)
+                  setSelectedScan(scan)
+                }
                 setTimeout(() => { setIsScanning(false); setScanProgress(null); fetchScans() }, 2000)
               }
             }
@@ -241,11 +310,288 @@ export default function DastPage() {
       }
     } catch { /* API unavailable, fallback to simulated scan */ }
     // Fallback: simulated scan
-    startMockScan()
+    startMockScan(name, targetUrl, scanProfile)
+  }
+
+  // ── Generate mock scan data from target URL ──
+  function generateMockScanData(scanId: string, name: string, targetUrl: string, scanProfile: string): { scan: DastScan; findings: DastFinding[] } {
+    const now = new Date().toISOString()
+    const startedAt = new Date(Date.now() - 45000).toISOString()
+
+    const mockFindings: DastFinding[] = [
+      {
+        id: `${scanId}-f1`, scanId, type: 'SQL_INJECTION', owaspCategory: 'A03:2021 Injection',
+        cweId: 'CWE-89', severity: 'CRITICAL' as Severity, cvssScore: 9.8, cvssVector: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H',
+        riskScore: 95, title: 'SQL Injection in Login Form',
+        description: 'The login endpoint is vulnerable to SQL injection via the username parameter. An attacker can bypass authentication or extract database contents.',
+        businessImpact: 'Complete database compromise, unauthorized access to all user accounts, potential data exfiltration of PII and credentials.',
+        affectedUrl: `${targetUrl}/api/auth/login`, affectedParameter: 'username',
+        payload: "' OR '1'='1' --", remediation: 'Use parameterized queries or prepared statements. Never concatenate user input into SQL strings.',
+        remediationCode: JSON.stringify({ vulnerableCode: "db.query(`SELECT * FROM users WHERE username='${req.body.username}'`)", remediatedCode: "db.query('SELECT * FROM users WHERE username = $1', [req.body.username])", explanation: 'Parameterized queries prevent SQL injection by separating SQL logic from data.', language: 'JavaScript', framework: 'Node.js/Express' }),
+        aiEnrichmentData: JSON.stringify({ attackScenario: 'Attacker submits crafted SQL in the login form to bypass authentication and dump the users table.', falsePositiveLikelihood: 'LOW', priorityScore: 98, mitigationUrgency: 'IMMEDIATE', exploitDifficulty: 'LOW', dataAtRisk: 'User credentials, PII, session tokens' }),
+        pciDssRefs: ['6.5.1'], soc2Refs: ['CC6.1'], mitreAttackIds: ['T1190'], confidenceScore: 95, status: 'OPEN', isConfirmed: true,
+      },
+      {
+        id: `${scanId}-f2`, scanId, type: 'XSS_REFLECTED', owaspCategory: 'A03:2021 Injection',
+        cweId: 'CWE-79', severity: 'HIGH' as Severity, cvssScore: 7.1, cvssVector: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N',
+        riskScore: 72, title: 'Reflected Cross-Site Scripting (XSS)',
+        description: 'The search endpoint reflects user input without proper encoding, allowing script injection in the response.',
+        businessImpact: 'Session hijacking, credential theft via phishing, defacement of user-facing pages.',
+        affectedUrl: `${targetUrl}/search`, affectedParameter: 'q',
+        payload: '<script>alert(document.cookie)</script>', remediation: 'Encode all user-supplied output using context-appropriate encoding (HTML entity encoding for HTML context).',
+        remediationCode: JSON.stringify({ vulnerableCode: '<div>Results for: ${query}</div>', remediatedCode: '<div>Results for: {escapeHtml(query)}</div>', explanation: 'HTML entity encoding prevents browser from interpreting user input as executable code.', language: 'JavaScript', framework: 'React' }),
+        aiEnrichmentData: JSON.stringify({ attackScenario: 'Attacker crafts a malicious URL with embedded JavaScript and sends it to victims via email or social engineering.', falsePositiveLikelihood: 'LOW', priorityScore: 82, mitigationUrgency: 'HIGH', exploitDifficulty: 'LOW' }),
+        pciDssRefs: ['6.5.7'], soc2Refs: ['CC6.1'], mitreAttackIds: ['T1059.007'], confidenceScore: 90, status: 'OPEN', isConfirmed: true,
+      },
+      {
+        id: `${scanId}-f3`, scanId, type: 'MISSING_SECURITY_HEADERS', owaspCategory: 'A05:2021 Security Misconfiguration',
+        cweId: 'CWE-693', severity: 'MEDIUM' as Severity, cvssScore: 5.3, cvssVector: null,
+        riskScore: 45, title: 'Missing Content-Security-Policy Header',
+        description: 'The application does not set a Content-Security-Policy header, leaving it more susceptible to XSS and data injection attacks.',
+        businessImpact: 'Increases the attack surface for cross-site scripting and clickjacking attacks.',
+        affectedUrl: targetUrl, affectedParameter: null,
+        payload: null, remediation: "Add a Content-Security-Policy header to all responses. Start with a restrictive policy like \"default-src 'self'\" and expand as needed.",
+        remediationCode: JSON.stringify({ securityHeaders: "Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'", configurationFix: "// Express middleware\napp.use((req, res, next) => {\n  res.setHeader('Content-Security-Policy', \"default-src 'self'\");\n  next();\n});", language: 'JavaScript', framework: 'Express' }),
+        aiEnrichmentData: null, pciDssRefs: ['6.5.10'], soc2Refs: [], mitreAttackIds: [], confidenceScore: 100, status: 'OPEN', isConfirmed: true,
+      },
+      {
+        id: `${scanId}-f4`, scanId, type: 'MISSING_SECURITY_HEADERS', owaspCategory: 'A05:2021 Security Misconfiguration',
+        cweId: 'CWE-693', severity: 'MEDIUM' as Severity, cvssScore: 4.3, cvssVector: null,
+        riskScore: 40, title: 'Missing X-Frame-Options Header',
+        description: 'The application does not set X-Frame-Options or frame-ancestors CSP directive, making it vulnerable to clickjacking attacks.',
+        businessImpact: 'Attackers can embed the application in an iframe to trick users into performing unintended actions.',
+        affectedUrl: targetUrl, affectedParameter: null,
+        payload: null, remediation: 'Set X-Frame-Options: DENY or SAMEORIGIN header on all responses.',
+        remediationCode: JSON.stringify({ securityHeaders: 'X-Frame-Options: DENY', configurationFix: "res.setHeader('X-Frame-Options', 'DENY');", language: 'JavaScript', framework: 'Express' }),
+        aiEnrichmentData: null, pciDssRefs: [], soc2Refs: [], mitreAttackIds: [], confidenceScore: 100, status: 'OPEN', isConfirmed: true,
+      },
+      {
+        id: `${scanId}-f5`, scanId, type: 'INSECURE_COOKIE', owaspCategory: 'A07:2021 Identification and Authentication Failures',
+        cweId: 'CWE-614', severity: 'MEDIUM' as Severity, cvssScore: 4.7, cvssVector: null,
+        riskScore: 42, title: 'Session Cookie Missing Secure Flag',
+        description: 'The session cookie is not set with the Secure flag, meaning it can be transmitted over unencrypted HTTP connections.',
+        businessImpact: 'Session tokens can be intercepted in man-in-the-middle attacks on non-HTTPS connections.',
+        affectedUrl: `${targetUrl}/api/auth/login`, affectedParameter: 'Set-Cookie',
+        payload: null, remediation: 'Set the Secure flag on all session and authentication cookies.',
+        remediationCode: JSON.stringify({ configurationFix: "res.cookie('session', token, { secure: true, httpOnly: true, sameSite: 'strict' });", language: 'JavaScript', framework: 'Express' }),
+        aiEnrichmentData: null, pciDssRefs: ['6.5.10'], soc2Refs: ['CC6.1'], mitreAttackIds: [], confidenceScore: 85, status: 'OPEN', isConfirmed: true,
+      },
+      {
+        id: `${scanId}-f6`, scanId, type: 'INFORMATION_DISCLOSURE', owaspCategory: 'A01:2021 Broken Access Control',
+        cweId: 'CWE-200', severity: 'LOW' as Severity, cvssScore: 3.1, cvssVector: null,
+        riskScore: 25, title: 'Server Version Information Disclosure',
+        description: 'The server response headers reveal the web server software and version, aiding attackers in identifying known vulnerabilities.',
+        businessImpact: 'Reduces attacker effort in reconnaissance phase by revealing technology stack details.',
+        affectedUrl: targetUrl, affectedParameter: 'Server header',
+        payload: null, remediation: 'Remove or obfuscate the Server header and X-Powered-By header from all responses.',
+        remediationCode: JSON.stringify({ configurationFix: "app.disable('x-powered-by');\nres.removeHeader('Server');", language: 'JavaScript', framework: 'Express' }),
+        aiEnrichmentData: null, pciDssRefs: [], soc2Refs: [], mitreAttackIds: ['T1592'], confidenceScore: 100, status: 'OPEN', isConfirmed: true,
+      },
+      {
+        id: `${scanId}-f7`, scanId, type: 'INFORMATION_DISCLOSURE', owaspCategory: 'A05:2021 Security Misconfiguration',
+        cweId: 'CWE-215', severity: 'INFO' as Severity, cvssScore: null, cvssVector: null,
+        riskScore: 10, title: 'Debug Error Messages Exposed',
+        description: 'Detailed stack traces and debug information are returned in error responses, potentially exposing internal implementation details.',
+        businessImpact: 'Minimal direct impact but aids attacker reconnaissance by revealing file paths and framework internals.',
+        affectedUrl: `${targetUrl}/api/nonexistent`, affectedParameter: null,
+        payload: null, remediation: 'Disable verbose error messages in production. Return generic error responses without stack traces.',
+        remediationCode: JSON.stringify({ configurationFix: "// Production error handler\napp.use((err, req, res, next) => {\n  res.status(500).json({ error: 'Internal server error' });\n});", language: 'JavaScript', framework: 'Express' }),
+        aiEnrichmentData: null, pciDssRefs: [], soc2Refs: [], mitreAttackIds: [], confidenceScore: 80, status: 'OPEN', isConfirmed: false,
+      },
+    ]
+
+    const criticalCount = mockFindings.filter(f => f.severity === 'CRITICAL').length
+    const highCount = mockFindings.filter(f => f.severity === 'HIGH').length
+    const mediumCount = mockFindings.filter(f => f.severity === 'MEDIUM').length
+    const lowCount = mockFindings.filter(f => f.severity === 'LOW').length
+    const infoCount = mockFindings.filter(f => f.severity === 'INFO').length
+
+    const aiCorrelationData = JSON.stringify({
+      attackChains: [
+        {
+          chainId: `${scanId}-chain-1`,
+          name: 'Authentication Bypass to Data Exfiltration',
+          description: 'SQL injection in login form can be chained with information disclosure to map the database schema and exfiltrate sensitive data.',
+          severity: 'CRITICAL',
+          findingIndices: [0, 5, 6],
+          exploitationSteps: [
+            'Exploit SQL injection in login form to bypass authentication',
+            'Use error messages to enumerate database structure',
+            'Extract user credentials and PII via UNION-based injection',
+            'Leverage stolen credentials for lateral movement',
+          ],
+          businessImpact: 'Full database compromise leading to mass data breach of user PII and credentials.',
+          likelihoodOfExploitation: 'HIGH',
+        },
+      ],
+      riskAmplifiers: [
+        { description: 'Missing security headers amplify XSS impact by removing browser-side protections', affectedFindings: [1, 2], amplificationFactor: 1.4 },
+      ],
+      duplicateGroups: [
+        { reason: 'Multiple missing security header findings', findingIndices: [2, 3], recommendedAction: 'Fix together in middleware' },
+      ],
+      overallChainedRiskScore: 88,
+    })
+
+    const aiComplianceData = JSON.stringify({
+      frameworks: [
+        {
+          name: 'PCI DSS v4.0',
+          overallStatus: 'CRITICAL_GAPS',
+          controlsAffected: 4,
+          totalControlsChecked: 12,
+          affectedControls: [
+            { framework: 'PCI DSS', controlId: '6.2.4', controlName: 'Software engineering techniques prevent injection attacks', status: 'FAIL', findingIndices: [0], remediationNote: 'SQL injection vulnerability must be remediated immediately' },
+            { framework: 'PCI DSS', controlId: '6.2.4.2', controlName: 'XSS prevention controls', status: 'FAIL', findingIndices: [1], remediationNote: 'Implement output encoding across all user-facing pages' },
+          ],
+        },
+      ],
+      highestRiskFramework: 'PCI DSS v4.0',
+      complianceScore: 62,
+      auditReadiness: 'NOT_READY',
+      keyGaps: [
+        'Critical SQL injection vulnerability violates multiple PCI DSS requirements',
+        'Missing security headers indicate insufficient hardening',
+        'Session cookie configuration does not meet secure transport requirements',
+      ],
+    })
+
+    const scan: DastScan = {
+      id: scanId,
+      orgId: 'mock-org',
+      name,
+      targetUrl,
+      scanProfile,
+      status: 'COMPLETED',
+      progress: 100,
+      currentPhase: 'complete',
+      riskScore: 78,
+      endpointsDiscovered: 120,
+      endpointsTested: 108,
+      payloadsSent: 2800,
+      criticalCount,
+      highCount,
+      mediumCount,
+      lowCount,
+      infoCount,
+      executiveSummary: `## Scan Overview\nDASTscan of **${targetUrl}** identified **${mockFindings.length} vulnerabilities** across ${criticalCount} critical, ${highCount} high, ${mediumCount} medium, ${lowCount} low, and ${infoCount} informational severity levels.\n\n## Key Risks\n- **SQL Injection** in the authentication endpoint poses immediate risk of full database compromise\n- **Reflected XSS** combined with missing security headers creates elevated session hijacking risk\n- **Missing security headers** (CSP, X-Frame-Options) weaken browser-side defenses\n\n## Recommendations\n- **Immediate**: Remediate SQL injection vulnerability in login endpoint\n- **High Priority**: Fix reflected XSS and implement Content-Security-Policy\n- **Standard**: Address cookie security flags and information disclosure issues`,
+      aiCorrelationData,
+      aiComplianceData,
+      techStackDetected: ['Node.js', 'Express', 'React', 'PostgreSQL'],
+      reportUrl: null,
+      startedAt,
+      completedAt: now,
+      createdAt: startedAt,
+    }
+
+    return { scan, findings: mockFindings }
+  }
+
+  // ── Generate client-side report for mock scans ──
+  function generateClientReport(scan: DastScan, scanFindings: DastFinding[], format: 'pdf' | 'json' | 'csv') {
+    if (format === 'json') {
+      const reportData = {
+        report: {
+          generatedAt: new Date().toISOString(),
+          scan: {
+            id: scan.id, name: scan.name, targetUrl: scan.targetUrl, scanProfile: scan.scanProfile,
+            status: scan.status, riskScore: scan.riskScore,
+            severityCounts: { critical: scan.criticalCount, high: scan.highCount, medium: scan.mediumCount, low: scan.lowCount, info: scan.infoCount },
+            endpoints: { discovered: scan.endpointsDiscovered, tested: scan.endpointsTested },
+            payloadsSent: scan.payloadsSent,
+            techStack: scan.techStackDetected,
+            startedAt: scan.startedAt, completedAt: scan.completedAt,
+          },
+          executiveSummary: scan.executiveSummary,
+          findings: scanFindings.map(f => ({
+            id: f.id, type: f.type, severity: f.severity, title: f.title,
+            description: f.description, affectedUrl: f.affectedUrl, affectedParameter: f.affectedParameter,
+            cvssScore: f.cvssScore, cweId: f.cweId, owaspCategory: f.owaspCategory,
+            remediation: f.remediation, confidenceScore: f.confidenceScore, status: f.status,
+            pciDssRefs: f.pciDssRefs, soc2Refs: f.soc2Refs, mitreAttackIds: f.mitreAttackIds,
+          })),
+        },
+      }
+      const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `dast-report-${scan.id}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      return 'JSON report downloaded.'
+    }
+
+    if (format === 'csv') {
+      const headers = ['ID', 'Severity', 'Title', 'Type', 'OWASP Category', 'CWE', 'CVSS', 'Affected URL', 'Parameter', 'Confidence', 'Status', 'Remediation']
+      const rows = scanFindings.map(f => [
+        f.id, f.severity, `"${f.title.replace(/"/g, '""')}"`, f.type, f.owaspCategory, f.cweId ?? '',
+        f.cvssScore?.toString() ?? '', `"${f.affectedUrl}"`, f.affectedParameter ?? '', f.confidenceScore.toString(),
+        f.status, `"${f.remediation.replace(/"/g, '""')}"`,
+      ].join(','))
+      const csv = [headers.join(','), ...rows].join('\n')
+      const blob = new Blob([csv], { type: 'text/csv' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `dast-report-${scan.id}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+      return 'CSV report downloaded.'
+    }
+
+    // PDF (HTML report)
+    const findingsHtml = scanFindings.map(f => `
+      <tr>
+        <td><span class="sev-${f.severity.toLowerCase()}">${f.severity}</span></td>
+        <td>${f.title}</td>
+        <td>${f.owaspCategory}</td>
+        <td>${f.cvssScore ?? '-'}</td>
+        <td style="font-size:11px;word-break:break-all">${f.affectedUrl}</td>
+        <td style="font-size:11px">${f.remediation}</td>
+      </tr>
+    `).join('')
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DAST Report - ${scan.name}</title>
+    <style>
+      body{font-family:system-ui,sans-serif;max-width:1100px;margin:0 auto;padding:40px;color:#1a1a2e;background:#fff}
+      h1{font-size:24px;border-bottom:3px solid #7c3aed;padding-bottom:8px}
+      h2{font-size:16px;color:#7c3aed;margin-top:28px;letter-spacing:0.05em;text-transform:uppercase}
+      .meta{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin:16px 0}
+      .meta-box{background:#f8f7ff;border:1px solid #e5e0ff;padding:14px;text-align:center}
+      .meta-box .val{font-size:28px;font-weight:700;color:#7c3aed}
+      .meta-box .lbl{font-size:11px;color:#888;margin-top:4px}
+      table{width:100%;border-collapse:collapse;font-size:12px;margin:12px 0}
+      th{background:#7c3aed;color:#fff;padding:8px 10px;text-align:left;font-size:10px;letter-spacing:0.08em;text-transform:uppercase}
+      td{padding:8px 10px;border-bottom:1px solid #eee;vertical-align:top}
+      tr:nth-child(even){background:#faf9ff}
+      .sev-critical{color:#dc2626;font-weight:700}.sev-high{color:#ea580c;font-weight:700}
+      .sev-medium{color:#ca8a04;font-weight:700}.sev-low{color:#2563eb}.sev-info{color:#6b7280}
+      .summary{background:#f8f7ff;border-left:4px solid #7c3aed;padding:16px;margin:12px 0;line-height:1.7;white-space:pre-line;font-size:13px}
+      @media print{body{padding:20px}h1{font-size:20px}}
+    </style></head><body>
+    <h1>DAST Security Report</h1>
+    <div class="meta">
+      <div class="meta-box"><div class="val">${scan.riskScore}</div><div class="lbl">Risk Score</div></div>
+      <div class="meta-box"><div class="val">${scanFindings.length}</div><div class="lbl">Total Findings</div></div>
+      <div class="meta-box"><div class="val">${scan.endpointsTested}</div><div class="lbl">Endpoints Tested</div></div>
+    </div>
+    <table><tr><td><strong>Target:</strong> ${scan.targetUrl}</td><td><strong>Profile:</strong> ${scan.scanProfile}</td><td><strong>Date:</strong> ${scan.completedAt ? new Date(scan.completedAt).toLocaleDateString() : 'N/A'}</td></tr>
+    <tr><td><strong>Critical:</strong> ${scan.criticalCount}</td><td><strong>High:</strong> ${scan.highCount}</td><td><strong>Medium:</strong> ${scan.mediumCount} | <strong>Low:</strong> ${scan.lowCount} | <strong>Info:</strong> ${scan.infoCount}</td></tr></table>
+    ${scan.executiveSummary ? `<h2>Executive Summary</h2><div class="summary">${scan.executiveSummary}</div>` : ''}
+    <h2>Findings</h2>
+    <table><thead><tr><th>Severity</th><th>Title</th><th>OWASP</th><th>CVSS</th><th>URL</th><th>Remediation</th></tr></thead><tbody>${findingsHtml}</tbody></table>
+    <p style="margin-top:40px;font-size:11px;color:#aaa;text-align:center">Generated by HemisX DAST Scanner on ${new Date().toLocaleString()}</p>
+    </body></html>`
+
+    const blob = new Blob([html], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank')
+    return 'Report opened in new tab. Use Ctrl+P / Cmd+P to save as PDF.'
   }
 
   // ── Simulated scan (fallback when API unavailable) ──
-  function startMockScan() {
+  function startMockScan(name: string, targetUrl: string, scanProfile: string) {
     setIsScanning(true)
     const phases = [
       { p: 5, phase: 'initializing', msg: 'Creating scan session...' },
@@ -264,18 +610,19 @@ export default function DastPage() {
       { p: 100, phase: 'complete', msg: 'Scan completed' },
     ]
     let step = 0
+    const mockScanId = `mock-${Date.now()}`
     progressRef.current = setInterval(() => {
       if (step < phases.length) {
         const s = phases[step]
         setScanProgress({
-          scanId: 'sim-live',
+          scanId: mockScanId,
           status: s.p === 100 ? 'COMPLETED' : 'RUNNING',
           progress: s.p,
           currentPhase: s.phase,
           endpointsDiscovered: Math.round(s.p * 1.2),
           endpointsTested: Math.round(s.p * 0.9),
           payloadsSent: Math.round(s.p * 28),
-          findingsCount: s.p > 85 ? 14 : 0,
+          findingsCount: s.p > 85 ? 7 : 0,
           message: s.msg,
           timestamp: new Date().toISOString(),
         })
@@ -283,7 +630,13 @@ export default function DastPage() {
       } else {
         clearInterval(progressRef.current!)
         progressRef.current = null
-        setTimeout(() => { setIsScanning(false); setScanProgress(null); fetchScans() }, 2000)
+        // Generate real scan data and add to state
+        const { scan: mockScan, findings: mockFindings } = generateMockScanData(mockScanId, name, targetUrl, scanProfile)
+        setScans(prev => [mockScan, ...prev])
+        setFindings(prev => [...prev, ...mockFindings])
+        setSelectedScan(mockScan)
+        setLastCompletedScanId(mockScanId)
+        setTimeout(() => { setIsScanning(false); setScanProgress(null) }, 2000)
       }
     }, 1200)
   }
@@ -294,10 +647,38 @@ export default function DastPage() {
     setReportGenerating(true)
     setReportSuccess(null)
     setReportError(null)
+
+    // Check if this is a mock scan (in-memory only)
+    const isMockScan = reportScanId.startsWith('mock-')
+    const targetScan = scans.find(s => s.id === reportScanId)
+    const targetFindings = findings.filter(f => f.scanId === reportScanId)
+
+    if (isMockScan && targetScan) {
+      try {
+        const msg = generateClientReport(targetScan, targetFindings, reportFormat)
+        setReportSuccess(msg)
+      } catch (err) {
+        setReportError(err instanceof Error ? err.message : 'Client-side report generation failed')
+      }
+      setReportGenerating(false)
+      return
+    }
+
     try {
-      const res = await fetch(`/api/dast/reports/${reportScanId}?format=${reportFormat}`)
+      const res = await fetch(`/api/dast/reports/${reportScanId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format: reportFormat }),
+      })
       if (!res.ok) {
         const errData = await res.json().catch(() => null)
+        // If API fails and we have in-memory data, fall back to client-side generation
+        if (targetScan) {
+          const msg = generateClientReport(targetScan, targetFindings, reportFormat)
+          setReportSuccess(msg)
+          setReportGenerating(false)
+          return
+        }
         throw new Error(errData?.error || `Report generation failed (${res.status})`)
       }
 
@@ -330,6 +711,15 @@ export default function DastPage() {
         setReportSuccess('CSV report downloaded.')
       }
     } catch (err) {
+      // Last resort: try client-side generation if we have in-memory data
+      if (targetScan) {
+        try {
+          const msg = generateClientReport(targetScan, targetFindings, reportFormat)
+          setReportSuccess(msg)
+          setReportGenerating(false)
+          return
+        } catch { /* fall through to error */ }
+      }
       setReportError(err instanceof Error ? err.message : 'Report generation failed')
     }
     setReportGenerating(false)
@@ -435,6 +825,79 @@ export default function DastPage() {
               </div>
             </div>
           )}
+
+          {/* Scan Complete Banner */}
+          {!isScanning && lastCompletedScanId && (() => {
+            const completedScan = scans.find(s => s.id === lastCompletedScanId)
+            if (!completedScan) return null
+            return (
+              <div className="bracket-card bracket-dast" style={{ padding: 20, marginBottom: 20, borderColor: 'var(--color-scanner)', background: 'var(--color-bg-surface)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                      <div className="mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-scanner)', letterSpacing: '0.08em' }}>
+                        SCAN COMPLETED SUCCESSFULLY
+                      </div>
+                      <button
+                        onClick={() => setLastCompletedScanId(null)}
+                        style={{ background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}
+                      >
+                        &#x2715;
+                      </button>
+                    </div>
+                    <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginBottom: 4 }}>
+                      {completedScan.name} &mdash; {completedScan.targetUrl}
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+                      <span className="label-tag sev-critical">Critical: {completedScan.criticalCount}</span>
+                      <span className="label-tag sev-high">High: {completedScan.highCount}</span>
+                      <span className="label-tag sev-medium">Medium: {completedScan.mediumCount}</span>
+                      <span className="label-tag sev-low">Low: {completedScan.lowCount}</span>
+                      <span className="label-tag sev-info">Info: {completedScan.infoCount}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <button
+                        onClick={() => {
+                          setSelectedScan(completedScan)
+                          setSelectedFinding(null)
+                          setSeverityFilter('ALL')
+                          setActiveTab('history')
+                        }}
+                        className="mono"
+                        style={{
+                          background: 'var(--color-dast)', color: '#fff', border: 'none',
+                          padding: '8px 20px', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em',
+                          textTransform: 'uppercase', cursor: 'pointer',
+                        }}
+                      >
+                        VIEW RESULTS
+                      </button>
+                      <button
+                        onClick={() => {
+                          setReportScanId(completedScan.id)
+                          setReportSuccess(null)
+                          setReportError(null)
+                          setActiveTab('report')
+                        }}
+                        className="mono"
+                        style={{
+                          background: 'transparent', color: 'var(--color-dast)',
+                          border: '1px solid var(--color-dast)',
+                          padding: '8px 20px', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em',
+                          textTransform: 'uppercase', cursor: 'pointer',
+                        }}
+                      >
+                        GENERATE REPORT
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mono" style={{ fontSize: 32, fontWeight: 700, color: riskColor(completedScan.riskScore) }}>
+                    {completedScan.riskScore}
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Scan Configuration Form (show when NOT scanning) */}
           {!isScanning && (
@@ -1603,8 +2066,16 @@ function ComparisonPanel({ scans, compBaselineId, compCurrentId, setCompBaseline
         </div>
       </div>
 
+      {/* Mock scan comparison warning */}
+      {compResult?._mockWarning && (
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-dim)' }}>
+          <div style={{ fontSize: 14, marginBottom: 8, color: 'var(--color-medium)' }}>Comparison requires scans stored in the database.</div>
+          <div className="mono" style={{ fontSize: 11 }}>Mock scans are stored in-memory only. Run real scans with a connected database to enable comparison.</div>
+        </div>
+      )}
+
       {/* Comparison Results */}
-      {compResult && (
+      {compResult && !compResult._mockWarning && (
         <div>
           {/* Overall Trend */}
           <div className="bracket-card bracket-dast" style={{ padding: '14px 18px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
