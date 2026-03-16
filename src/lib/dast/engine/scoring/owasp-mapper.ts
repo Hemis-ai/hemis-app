@@ -94,8 +94,15 @@ const PLUGIN_MAP = new Map<string, OwaspMapping>([
   // A06: Vulnerable and Outdated Components — Log4Shell
   ['40043', { owaspCategory: 'A06:2021-Vulnerable and Outdated Components', cweId: 'CWE-117', type: 'log4shell', mitreAttackIds: ['T1190', 'T1059'], pciDssRefs: ['6.5.1', '6.2'], soc2Refs: ['CC6.6', 'CC7.1'] }],
 
-  // A07: Identification and Authentication Failures — Session fixation
+  // A07: Identification and Authentication Failures — Session & Auth
   ['40013', { owaspCategory: 'A07:2021-Identification and Authentication Failures', cweId: 'CWE-384', type: 'session_fixation', mitreAttackIds: ['T1563'], pciDssRefs: ['6.5.10'], soc2Refs: ['CC6.1'] }],
+  ['10012', { owaspCategory: 'A07:2021-Identification and Authentication Failures', cweId: 'CWE-613', type: 'session_timeout', mitreAttackIds: ['T1550'], pciDssRefs: ['6.5.10', '8.1.8'], soc2Refs: ['CC6.1'] }],
+  ['10029', { owaspCategory: 'A07:2021-Identification and Authentication Failures', cweId: 'CWE-614', type: 'insecure_session_cookie', mitreAttackIds: ['T1539'], pciDssRefs: ['6.5.10'], soc2Refs: ['CC6.1'] }],
+  ['10053', { owaspCategory: 'A07:2021-Identification and Authentication Failures', cweId: 'CWE-1004', type: 'cookie_without_expiry', mitreAttackIds: [], pciDssRefs: ['6.5.10'], soc2Refs: ['CC6.1'] }],
+  ['10108', { owaspCategory: 'A07:2021-Identification and Authentication Failures', cweId: 'CWE-352', type: 'csrf_on_auth', mitreAttackIds: ['T1185'], pciDssRefs: ['6.5.9'], soc2Refs: ['CC6.1'] }],
+  ['10109', { owaspCategory: 'A07:2021-Identification and Authentication Failures', cweId: 'CWE-307', type: 'brute_force', mitreAttackIds: ['T1110'], pciDssRefs: ['6.5.10', '8.1.6'], soc2Refs: ['CC6.1'] }],
+  ['10110', { owaspCategory: 'A07:2021-Identification and Authentication Failures', cweId: 'CWE-287', type: 'auth_bypass', mitreAttackIds: ['T1548'], pciDssRefs: ['6.5.10'], soc2Refs: ['CC6.1', 'CC6.3'] }],
+  ['10111', { owaspCategory: 'A07:2021-Identification and Authentication Failures', cweId: 'CWE-613', type: 'insufficient_session_expiry', mitreAttackIds: ['T1550'], pciDssRefs: ['6.5.10', '8.1.8'], soc2Refs: ['CC6.1'] }],
 ])
 
 export function getOwaspMapping(pluginId: string): OwaspMapping | undefined {

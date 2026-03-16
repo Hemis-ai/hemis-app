@@ -22,6 +22,18 @@ export type AuthConfig =
     }
   | { type: 'bearer'; token: string }
   | { type: 'apikey'; headerName: string; value: string }
+  | {
+      type: 'oauth2'
+      tokenUrl: string
+      clientId: string
+      clientSecret: string
+      scope?: string
+      grantType?: 'client_credentials' | 'password'
+      username?: string
+      password?: string
+    }
+  | { type: 'cookie'; cookieName: string; cookieValue: string; domain?: string; path?: string }
+  | { type: 'header'; headers: Record<string, string> }
 
 export interface CreateDastScanInput {
   orgId: string
@@ -75,6 +87,7 @@ export interface ZapActiveScanStartResponse { scan: string }
 export interface ZapActiveScanStatusResponse { status: string }
 export interface ZapContextCreateResponse { contextId: string }
 export interface ZapNewUserResponse { userId: string }
+export interface ZapHttpSessionsResponse { sessions: string[][] }
 
 export interface ZapRawAlert {
   sourceid: string; other: string; method: string; evidence: string

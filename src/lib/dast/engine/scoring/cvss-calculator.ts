@@ -101,4 +101,16 @@ export const PRESET_VECTORS: Record<string, CvssInput> = {
   hidden_file:                { AV: 'N', AC: 'L', PR: 'N', UI: 'N', S: 'U', C: 'L', I: 'N', A: 'N' },
   trace_method:               { AV: 'N', AC: 'L', PR: 'N', UI: 'N', S: 'U', C: 'L', I: 'N', A: 'N' },
   insecure_http_method:       { AV: 'N', AC: 'L', PR: 'N', UI: 'N', S: 'U', C: 'N', I: 'L', A: 'N' },
+
+  // ─── Authentication & Session Security ────────────────────────────────
+  session_timeout:            { AV: 'N', AC: 'H', PR: 'N', UI: 'R', S: 'U', C: 'L', I: 'L', A: 'N' },
+  token_reuse:                { AV: 'N', AC: 'L', PR: 'L', UI: 'N', S: 'U', C: 'H', I: 'L', A: 'N' },
+  oauth2_misconfiguration:    { AV: 'N', AC: 'L', PR: 'N', UI: 'N', S: 'U', C: 'H', I: 'H', A: 'N' },
+  insecure_session_cookie:    { AV: 'N', AC: 'H', PR: 'N', UI: 'R', S: 'U', C: 'H', I: 'N', A: 'N' },
+  csrf_on_auth:               { AV: 'N', AC: 'L', PR: 'N', UI: 'R', S: 'U', C: 'N', I: 'H', A: 'N' },
+  auth_bypass:                { AV: 'N', AC: 'L', PR: 'N', UI: 'N', S: 'U', C: 'H', I: 'H', A: 'N' },
+  credential_stuffing:        { AV: 'N', AC: 'L', PR: 'N', UI: 'N', S: 'U', C: 'H', I: 'L', A: 'N' },
+  brute_force:                { AV: 'N', AC: 'L', PR: 'N', UI: 'N', S: 'U', C: 'H', I: 'N', A: 'N' },
+  insufficient_session_expiry:{ AV: 'N', AC: 'H', PR: 'L', UI: 'N', S: 'U', C: 'H', I: 'L', A: 'N' },
+  cookie_without_expiry:      { AV: 'N', AC: 'H', PR: 'N', UI: 'R', S: 'U', C: 'L', I: 'N', A: 'N' },
 }

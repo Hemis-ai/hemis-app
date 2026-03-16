@@ -3,7 +3,7 @@ import type {
   ZapSpiderResultsResponse, ZapAjaxSpiderStatusResponse,
   ZapActiveScanStartResponse, ZapActiveScanStatusResponse,
   ZapAlertsResponse, ZapContextCreateResponse, ZapNewUserResponse,
-  ZapVersionResponse, AttackStrength, AlertThreshold,
+  ZapVersionResponse, AttackStrength, AlertThreshold, ZapHttpSessionsResponse,
 } from '../../types'
 
 export class ZapApiError extends Error {
@@ -311,5 +311,33 @@ export class ZapClient {
 
   async removeReplacerRule(description: string): Promise<void> {
     await this.request<ZapResultResponse>('removeReplacerRule', '/JSON/replacer/action/removeRule/', { description })
+  }
+
+  // ─── Session Management ─────────────────────────────────────────────────
+
+  async setSessionManagementMethod(contextId: string, methodName: string, methodConfigParams?: string): Promise<void> {
+    const params: Record<string, string> = { contextId, methodName }
+    if (methodConfigParams) params.methodConfigParams = methodConfigParams
+    await this.request<ZapResultResponse>('setSessionManagementMethod', '/JSON/sessionManagement/action/setSessionManagementMethod/', params)
+  }
+
+  async getHttpSessions(site: string): Promise<ZapHttpSessionsResponse> {
+    return this.request<ZapHttpSessionsResponse>('getHttpSessions', '/JSON/httpSessions/view/sessions/', { site })
+  }
+
+  async createEmptySession(site: string, session: string): Promise<void> {
+    await this.request<ZapResultResponse>('createEmptySession', '/JSON/httpSessions/action/createEmptySession/', { site, session })
+  }
+
+  async setActiveSession(site: string, session: string): Promise<void> {
+    await this.request<ZapResultResponse>('setActiveSession', '/JSON/httpSessions/action/setActiveSession/', { site, session })
+  }
+
+  async addSessionToken(site: string, sessionToken: string): Promise<void> {
+    await this.request<ZapResultResponse>('addSessionToken', '/JSON/httpSessions/action/addSessionToken/', { site, sessionToken })
+  }
+
+  async removeSessionToken(site: string, sessionToken: string): Promise<void> {
+    await this.request<ZapResultResponse>('removeSessionToken', '/JSON/httpSessions/action/removeSessionToken/', { site, sessionToken })
   }
 }
