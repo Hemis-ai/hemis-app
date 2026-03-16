@@ -3,7 +3,7 @@ import type {
   ZapSpiderResultsResponse, ZapAjaxSpiderStatusResponse,
   ZapActiveScanStartResponse, ZapActiveScanStatusResponse,
   ZapAlertsResponse, ZapContextCreateResponse, ZapNewUserResponse,
-  ZapVersionResponse,
+  ZapVersionResponse, AttackStrength, AlertThreshold,
 } from '../../types'
 
 export class ZapApiError extends Error {
@@ -134,6 +134,70 @@ export class ZapClient {
 
   async stopAjaxSpider(): Promise<void> {
     await this.request<ZapResultResponse>('stopAjaxSpider', '/JSON/ajaxSpider/action/stop/')
+  }
+
+  // ─── Scan Policy Management ────────────────────────────────────────────
+
+  async addScanPolicy(scanPolicyName: string): Promise<void> {
+    await this.request<ZapResultResponse>('addScanPolicy', '/JSON/ascan/action/addScanPolicy/', { scanPolicyName })
+  }
+
+  async removeScanPolicy(scanPolicyName: string): Promise<void> {
+    await this.request<ZapResultResponse>('removeScanPolicy', '/JSON/ascan/action/removeScanPolicy/', { scanPolicyName })
+  }
+
+  async setScannerAttackStrength(scanId: string, attackStrength: AttackStrength, scanPolicyName?: string): Promise<void> {
+    const params: Record<string, string> = { id: scanId, attackStrength }
+    if (scanPolicyName) params.scanPolicyName = scanPolicyName
+    await this.request<ZapResultResponse>('setScannerAttackStrength', '/JSON/ascan/action/setScannerAttackStrength/', params)
+  }
+
+  async setScannerAlertThreshold(scanId: string, alertThreshold: AlertThreshold, scanPolicyName?: string): Promise<void> {
+    const params: Record<string, string> = { id: scanId, alertThreshold }
+    if (scanPolicyName) params.scanPolicyName = scanPolicyName
+    await this.request<ZapResultResponse>('setScannerAlertThreshold', '/JSON/ascan/action/setScannerAlertThreshold/', params)
+  }
+
+  async enableScanners(ids: string[], scanPolicyName?: string): Promise<void> {
+    const params: Record<string, string> = { ids: ids.join(',') }
+    if (scanPolicyName) params.scanPolicyName = scanPolicyName
+    await this.request<ZapResultResponse>('enableScanners', '/JSON/ascan/action/enableScanners/', params)
+  }
+
+  async disableScanners(ids: string[], scanPolicyName?: string): Promise<void> {
+    const params: Record<string, string> = { ids: ids.join(',') }
+    if (scanPolicyName) params.scanPolicyName = scanPolicyName
+    await this.request<ZapResultResponse>('disableScanners', '/JSON/ascan/action/disableScanners/', params)
+  }
+
+  async disableAllScanners(scanPolicyName?: string): Promise<void> {
+    const params: Record<string, string> = {}
+    if (scanPolicyName) params.scanPolicyName = scanPolicyName
+    await this.request<ZapResultResponse>('disableAllScanners', '/JSON/ascan/action/disableAllScanners/', params)
+  }
+
+  async enableAllScanners(scanPolicyName?: string): Promise<void> {
+    const params: Record<string, string> = {}
+    if (scanPolicyName) params.scanPolicyName = scanPolicyName
+    await this.request<ZapResultResponse>('enableAllScanners', '/JSON/ascan/action/enableAllScanners/', params)
+  }
+
+  async setOptionMaxRuleDurationInMins(minutes: number): Promise<void> {
+    await this.request<ZapResultResponse>('setOptionMaxRuleDurationInMins', '/JSON/ascan/action/setOptionMaxRuleDurationInMins/', {
+      Integer: minutes.toString(),
+    })
+  }
+
+  async setOptionThreadPerHost(threads: number): Promise<void> {
+    await this.request<ZapResultResponse>('setOptionThreadPerHost', '/JSON/ascan/action/setOptionThreadPerHost/', {
+      Integer: threads.toString(),
+    })
+  }
+
+  async setOptionMaxScanDurationInMins(minutes: number): Promise<void> {
+    await this.request<ZapResultResponse>('setOptionMaxScanDurationInMins', '/JSON/ascan/action/setOptionMaxScanDurationInMins/', {
+      Integer: minutes.toString(),
+    })
   }
 
   // ─── Active Scan ────────────────────────────────────────────────────────

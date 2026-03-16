@@ -65,6 +65,37 @@ const PLUGIN_MAP = new Map<string, OwaspMapping>([
   ['10026', { owaspCategory: 'A08:2021-Software and Data Integrity Failures', cweId: 'CWE-235', type: 'http_parameter_override', mitreAttackIds: [], pciDssRefs: [], soc2Refs: ['CC6.6'] }],
   ['90017', { owaspCategory: 'A08:2021-Software and Data Integrity Failures', cweId: 'CWE-91', type: 'xslt_injection', mitreAttackIds: ['T1059'], pciDssRefs: ['6.5.1'], soc2Refs: ['CC6.6'] }],
   ['40046', { owaspCategory: 'A10:2021-Server-Side Request Forgery', cweId: 'CWE-918', type: 'ssrf', mitreAttackIds: ['T1190'], pciDssRefs: ['6.5.1'], soc2Refs: ['CC6.6'] }],
+
+  // ─── Expanded Coverage: Additional ZAP Plugin Mappings ─────────────────
+
+  // A01: Broken Access Control — Additional checks
+  ['40016', { owaspCategory: 'A01:2021-Broken Access Control', cweId: 'CWE-352', type: 'cross_site_method_tampering', mitreAttackIds: ['T1185'], pciDssRefs: ['6.5.9'], soc2Refs: ['CC6.1'] }],
+  ['40038', { owaspCategory: 'A01:2021-Broken Access Control', cweId: 'CWE-284', type: 'bypassing_403', mitreAttackIds: ['T1190'], pciDssRefs: ['7.1'], soc2Refs: ['CC6.1', 'CC6.3'] }],
+
+  // A02: Cryptographic Failures — Additional checks
+  ['10047', { owaspCategory: 'A02:2021-Cryptographic Failures', cweId: 'CWE-311', type: 'https_content_via_http', mitreAttackIds: ['T1557'], pciDssRefs: ['4.1'], soc2Refs: ['CC6.7'] }],
+  ['10106', { owaspCategory: 'A02:2021-Cryptographic Failures', cweId: 'CWE-319', type: 'http_only_site', mitreAttackIds: ['T1557'], pciDssRefs: ['4.1'], soc2Refs: ['CC6.7'] }],
+
+  // A03: Injection — Advanced injection types
+  ['40017', { owaspCategory: 'A03:2021-Injection', cweId: 'CWE-79', type: 'xss_persistent', mitreAttackIds: ['T1059.007'], pciDssRefs: ['6.5.7'], soc2Refs: ['CC6.6'] }],
+  ['90025', { owaspCategory: 'A03:2021-Injection', cweId: 'CWE-917', type: 'expression_language_injection', mitreAttackIds: ['T1059'], pciDssRefs: ['6.5.1'], soc2Refs: ['CC6.6'] }],
+  ['90035', { owaspCategory: 'A03:2021-Injection', cweId: 'CWE-1336', type: 'ssti', mitreAttackIds: ['T1059'], pciDssRefs: ['6.5.1'], soc2Refs: ['CC6.6'] }],
+
+  // A05: Security Misconfiguration — Extended coverage
+  ['10045', { owaspCategory: 'A05:2021-Security Misconfiguration', cweId: 'CWE-540', type: 'source_code_disclosure', mitreAttackIds: ['T1083'], pciDssRefs: [], soc2Refs: ['CC7.1'] }],
+  ['10049', { owaspCategory: 'A05:2021-Security Misconfiguration', cweId: 'CWE-524', type: 'content_cacheability', mitreAttackIds: [], pciDssRefs: [], soc2Refs: ['CC6.1'] }],
+  ['10095', { owaspCategory: 'A05:2021-Security Misconfiguration', cweId: 'CWE-530', type: 'backup_file_disclosure', mitreAttackIds: ['T1083'], pciDssRefs: [], soc2Refs: ['CC7.1'] }],
+  ['40029', { owaspCategory: 'A05:2021-Security Misconfiguration', cweId: 'CWE-693', type: 'trace_method', mitreAttackIds: [], pciDssRefs: [], soc2Refs: ['CC6.1'] }],
+  ['40035', { owaspCategory: 'A05:2021-Security Misconfiguration', cweId: 'CWE-538', type: 'hidden_file', mitreAttackIds: ['T1083'], pciDssRefs: [], soc2Refs: ['CC7.1'] }],
+  ['40042', { owaspCategory: 'A05:2021-Security Misconfiguration', cweId: 'CWE-215', type: 'spring_actuator', mitreAttackIds: ['T1190'], pciDssRefs: [], soc2Refs: ['CC7.1'] }],
+  ['90028', { owaspCategory: 'A05:2021-Security Misconfiguration', cweId: 'CWE-200', type: 'insecure_http_method', mitreAttackIds: [], pciDssRefs: [], soc2Refs: ['CC6.1'] }],
+  ['90034', { owaspCategory: 'A05:2021-Security Misconfiguration', cweId: 'CWE-918', type: 'cloud_metadata', mitreAttackIds: ['T1552.005'], pciDssRefs: ['6.5.1'], soc2Refs: ['CC6.6'] }],
+
+  // A06: Vulnerable and Outdated Components — Log4Shell
+  ['40043', { owaspCategory: 'A06:2021-Vulnerable and Outdated Components', cweId: 'CWE-117', type: 'log4shell', mitreAttackIds: ['T1190', 'T1059'], pciDssRefs: ['6.5.1', '6.2'], soc2Refs: ['CC6.6', 'CC7.1'] }],
+
+  // A07: Identification and Authentication Failures — Session fixation
+  ['40013', { owaspCategory: 'A07:2021-Identification and Authentication Failures', cweId: 'CWE-384', type: 'session_fixation', mitreAttackIds: ['T1563'], pciDssRefs: ['6.5.10'], soc2Refs: ['CC6.1'] }],
 ])
 
 export function getOwaspMapping(pluginId: string): OwaspMapping | undefined {

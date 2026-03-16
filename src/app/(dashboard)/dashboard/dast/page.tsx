@@ -29,7 +29,7 @@ export default function DastPage() {
   const [showNewScan, setShowNewScan] = useState(false)
   const [newScanName, setNewScanName] = useState('')
   const [newScanUrl, setNewScanUrl] = useState('')
-  const [newScanProfile, setNewScanProfile] = useState<'full' | 'quick' | 'api_only'>('full')
+  const [newScanProfile, setNewScanProfile] = useState<'full' | 'quick' | 'api_only' | 'deep'>('full')
 
   // ── Scan progress state ──
   const [isScanning, setIsScanning] = useState(false)
@@ -218,8 +218,8 @@ export default function DastPage() {
                 <input className="tac-input" placeholder="My Web App Scan" style={{ marginTop: 4 }} value={newScanName} onChange={e => setNewScanName(e.target.value)} />
               </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
-              {(['full', 'quick', 'api_only'] as const).map(profile => (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
+              {(['full', 'quick', 'api_only', 'deep'] as const).map(profile => (
                 <div
                   key={profile}
                   onClick={() => setNewScanProfile(profile)}
@@ -235,7 +235,7 @@ export default function DastPage() {
                     {profile.replace('_', ' ')}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 2 }}>
-                    {profile === 'full' ? 'Spider + Active Scan' : profile === 'quick' ? 'Top 10 checks' : 'API endpoints only'}
+                    {profile === 'full' ? 'Spider + Active Scan' : profile === 'quick' ? 'Top 10 checks' : profile === 'api_only' ? 'API endpoints only' : 'All checks, max intensity'}
                   </div>
                 </div>
               ))}

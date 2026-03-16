@@ -30,7 +30,24 @@ export interface CreateDastScanInput {
   scope?: string[]
   excludedPaths?: string[]
   authConfig?: AuthConfig
-  scanProfile?: 'full' | 'quick' | 'api_only'
+  scanProfile?: ScanProfile
+}
+
+export type ScanProfile = 'full' | 'quick' | 'api_only' | 'deep'
+
+// ─── Scan Policy Configuration ──────────────────────────────────────────────
+
+export type AttackStrength = 'LOW' | 'MEDIUM' | 'HIGH' | 'INSANE'
+export type AlertThreshold = 'OFF' | 'DEFAULT' | 'LOW' | 'MEDIUM' | 'HIGH'
+
+export interface ScanPolicyConfig {
+  name: string
+  defaultStrength: AttackStrength
+  defaultThreshold: AlertThreshold
+  maxRuleDurationMins: number
+  threadPerHost: number
+  enabledScannerIds?: string[]
+  disabledScannerIds?: string[]
 }
 
 export interface ScanProgressEvent {

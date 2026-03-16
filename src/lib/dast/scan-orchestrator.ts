@@ -2,12 +2,13 @@
 // Runs the 7-phase scan pipeline as an async function (no Bull queue needed)
 
 import { prisma } from '@/lib/db'
-import type { AuthConfig, ZapAlert, CreateFindingInput, DastScanStatus, ScanProgressEvent } from './types'
+import type { AuthConfig, ZapAlert, CreateFindingInput, DastScanStatus, ScanProgressEvent, ScanProfile } from './types'
 import { ZapClient } from './engine/zap/zap-client'
 import { configureAuth, cleanupAuth } from './engine/zap/auth'
 import { runSpider } from './engine/zap/spider'
 import { runActiveScan } from './engine/zap/scanner'
 import { fetchAlerts } from './engine/zap/alerts'
+import { configureScanPolicy, cleanupScanPolicy } from './engine/scan-policy'
 import { calculateCvss, PRESET_VECTORS, cvssToSeverity } from './engine/scoring/cvss-calculator'
 import { getOwaspMappingOrDefault } from './engine/scoring/owasp-mapper'
 import { enrichScanFindings } from './ai/enrichment-service'
@@ -58,12 +59,26 @@ export async function runDastScan(scanId: string): Promise<void> {
 
     const parsedAuth = (authConfig as AuthConfig) ?? { type: 'none' as const }
     await configureAuth(client, contextId, parsedAuth)
-    emitProgress(scanId, 'RUNNING', 5, 'initializing', 'Session initialized')
+
+    // Configure scan policy based on profile (full/quick/api_only/deep)
+    const profile = (scanProfile as ScanProfile) || 'full'
+    emitProgress(scanId, 'RUNNING', 3, 'initializing', `Configuring ${profile} scan policy...`)
+    let policyName: string | undefined
+    try {
+      policyName = await configureScanPolicy(client, profile)
+      emitProgress(scanId, 'RUNNING', 5, 'initializing', `Session initialized with ${profile} policy`)
+    } catch (policyError) {
+      // Fall back to default scan policy if configuration fails
+      console.warn('Failed to configure scan policy, using defaults:', policyError)
+      emitProgress(scanId, 'RUNNING', 5, 'initializing', 'Session initialized (default policy)')
+    }
 
     // Phase 2: Crawling (5-40%)
     await prisma.dastScan.update({ where: { id: scanId }, data: { currentPhase: 'crawling' } })
+    const includeAjaxSpider = profile !== 'api_only'
+    const spiderMaxChildren = profile === 'quick' ? 5 : profile === 'deep' ? undefined : 10
     const spiderResult = await runSpider(client, {
-      targetUrl, contextName, includeAjaxSpider: scanProfile !== 'api_only',
+      targetUrl, contextName, includeAjaxSpider, maxChildren: spiderMaxChildren,
       onProgress: (percent, phase) => emitProgress(scanId, 'RUNNING', Math.round(5 + (percent / 100) * 35), 'crawling', `${phase}: ${percent}%`),
     })
     await prisma.dastScan.update({ where: { id: scanId }, data: { zapSpiderScanId: spiderResult.scanId, endpointsDiscovered: spiderResult.urlsDiscovered, progress: 40 } })
@@ -72,8 +87,8 @@ export async function runDastScan(scanId: string): Promise<void> {
     // Phase 3: Scanning (40-85%)
     await prisma.dastScan.update({ where: { id: scanId }, data: { currentPhase: 'scanning' } })
     const scanResult = await runActiveScan(client, {
-      targetUrl, contextId, recurse: true,
-      onProgress: (percent) => emitProgress(scanId, 'RUNNING', Math.round(40 + (percent / 100) * 45), 'scanning', `Active scan: ${percent}%`),
+      targetUrl, contextId, recurse: true, scanPolicyName: policyName,
+      onProgress: (percent) => emitProgress(scanId, 'RUNNING', Math.round(40 + (percent / 100) * 45), 'scanning', `Active scan (${profile}): ${percent}%`),
     })
     await prisma.dastScan.update({ where: { id: scanId }, data: { zapScanId: scanResult.scanId, endpointsTested: spiderResult.urlsDiscovered, progress: 85 } })
     emitProgress(scanId, 'RUNNING', 85, 'scanning', 'Active scan complete')
@@ -128,6 +143,7 @@ export async function runDastScan(scanId: string): Promise<void> {
     await prisma.dastScan.update({ where: { id: scanId }, data: { status: 'COMPLETED', progress: 100, currentPhase: 'complete', completedAt: new Date(), riskScore } })
     emitProgress(scanId, 'COMPLETED', 100, 'complete', 'Scan completed')
     await cleanupAuth(client, parsedAuth)
+    await cleanupScanPolicy(client, profile).catch(() => {})
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Unknown error'
     console.error('DAST scan failed', { scanId, error: errorMsg })
