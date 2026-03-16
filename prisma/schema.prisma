@@ -303,6 +303,8 @@ model DastScan {
   infoCount           Int            @default(0)
 
   executiveSummary    String?        @db.Text
+  aiCorrelationData   String?        @db.Text // JSON: attack chains, duplicate groups
+  aiComplianceData    String?        @db.Text // JSON: compliance framework mapping
   reportUrl           String?
 
   // ZAP scan IDs (for pause/resume)
@@ -344,6 +346,7 @@ model DastFinding {
   responseEvidence    String?           @db.Text
   remediation         String            @db.Text
   remediationCode     String?           @db.Text
+  aiEnrichmentData    String?           @db.Text // JSON: attack scenario, false positive analysis, priority
   pciDssRefs          String[]
   soc2Refs            String[]
   mitreAttackIds      String[]
