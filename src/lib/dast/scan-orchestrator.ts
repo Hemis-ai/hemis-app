@@ -9,6 +9,7 @@ import { runSpider } from './engine/zap/spider'
 import { runActiveScan } from './engine/zap/scanner'
 import { fetchAlerts } from './engine/zap/alerts'
 import { configureScanPolicy, cleanupScanPolicy } from './engine/scan-policy'
+import { validateTarget } from './target-validator'
 import { calculateCvss, PRESET_VECTORS, cvssToSeverity } from './engine/scoring/cvss-calculator'
 import { getOwaspMappingOrDefault } from './engine/scoring/owasp-mapper'
 import { enrichScanFindings } from './ai/enrichment-service'
@@ -66,12 +67,43 @@ export async function runDastScan(scanId: string): Promise<void> {
     let policyName: string | undefined
     try {
       policyName = await configureScanPolicy(client, profile)
-      emitProgress(scanId, 'RUNNING', 5, 'initializing', `Session initialized with ${profile} policy`)
+      emitProgress(scanId, 'RUNNING', 4, 'initializing', `Session initialized with ${profile} policy`)
     } catch (policyError) {
       // Fall back to default scan policy if configuration fails
       console.warn('Failed to configure scan policy, using defaults:', policyError)
-      emitProgress(scanId, 'RUNNING', 5, 'initializing', 'Session initialized (default policy)')
+      emitProgress(scanId, 'RUNNING', 4, 'initializing', 'Session initialized (default policy)')
     }
+
+    // Phase 1b: Target validation, tech detection, and API spec import
+    emitProgress(scanId, 'RUNNING', 4, 'initializing', 'Detecting target technology stack...')
+    try {
+      const validation = await validateTarget(targetUrl)
+      if (validation.detectedTech.length > 0) {
+        await prisma.dastScan.update({ where: { id: scanId }, data: { techStackDetected: validation.detectedTech } })
+        emitProgress(scanId, 'RUNNING', 4, 'initializing', `Detected: ${validation.detectedTech.join(', ')}`)
+      }
+
+      // Import OpenAPI/Swagger spec into ZAP if detected (adds API endpoints to spider)
+      if (validation.apiSpecUrl) {
+        try {
+          await client.importOpenApiUrl(validation.apiSpecUrl, targetUrl, contextId)
+          emitProgress(scanId, 'RUNNING', 5, 'initializing', `Imported ${validation.apiSpecFormat} spec from ${validation.apiSpecUrl}`)
+        } catch (importError) {
+          console.warn('Failed to import OpenAPI spec into ZAP:', importError)
+        }
+      }
+
+      // If GraphQL was detected, add the endpoint to ZAP scope for scanning
+      if (validation.hasGraphql && validation.graphqlEndpoint) {
+        try {
+          await client.includeInContext(contextName, `${escapeRegex(validation.graphqlEndpoint)}.*`)
+        } catch { /* best-effort */ }
+      }
+    } catch (validationError) {
+      // Tech detection is best-effort; don't fail the scan
+      console.warn('Target validation/tech detection failed:', validationError)
+    }
+    emitProgress(scanId, 'RUNNING', 5, 'initializing', 'Initialization complete')
 
     // Phase 2: Crawling (5-40%)
     await prisma.dastScan.update({ where: { id: scanId }, data: { currentPhase: 'crawling' } })

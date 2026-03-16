@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { validateTarget } from '@/lib/dast/target-validator'
 
 /**
- * POST /api/dast/validate-target — Validate target URL reachability
+ * POST /api/dast/validate-target — Validate target URL reachability and detect tech stack
+ *
+ * Returns expanded validation including:
+ * - detectedTech: string[] — fingerprinted technologies
+ * - apiSpecUrl / apiSpecFormat — detected OpenAPI/Swagger spec
+ * - hasGraphql / graphqlEndpoint — detected GraphQL endpoint
  */
 export async function POST(req: NextRequest) {
   try {
@@ -17,7 +22,16 @@ export async function POST(req: NextRequest) {
     try {
       new URL(url)
     } catch {
-      return NextResponse.json({ reachable: false, url, error: 'Invalid URL format' })
+      return NextResponse.json({
+        reachable: false,
+        url,
+        detectedTech: [],
+        apiSpecUrl: null,
+        apiSpecFormat: null,
+        hasGraphql: false,
+        graphqlEndpoint: null,
+        error: 'Invalid URL format',
+      })
     }
 
     const result = await validateTarget(url)

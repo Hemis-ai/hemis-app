@@ -284,6 +284,22 @@ export class ZapClient {
     })
   }
 
+  // ─── OpenAPI Import ────────────────────────────────────────────────────
+
+  async importOpenApiUrl(url: string, targetUrl?: string, contextId?: string): Promise<void> {
+    const params: Record<string, string> = { url }
+    if (targetUrl) params.hostOverride = targetUrl
+    if (contextId) params.contextId = contextId
+    await this.request<ZapResultResponse>('importOpenApiUrl', '/JSON/openapi/action/importUrl/', params)
+  }
+
+  async importOpenApiDefinition(definition: string, targetUrl?: string, contextId?: string): Promise<void> {
+    const params: Record<string, string> = { file: definition }
+    if (targetUrl) params.hostOverride = targetUrl
+    if (contextId) params.contextId = contextId
+    await this.request<ZapResultResponse>('importOpenApiDefinition', '/JSON/openapi/action/importFile/', params)
+  }
+
   // ─── Replacer ───────────────────────────────────────────────────────────
 
   async addReplacerRule(description: string, enabled: boolean, matchType: string, matchRegex: boolean, matchString: string, replacement: string, initiators?: string): Promise<void> {
