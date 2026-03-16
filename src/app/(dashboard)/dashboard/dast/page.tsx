@@ -19,7 +19,7 @@ const PHASE_LABELS: Record<string, string> = {
   failed: 'Failed',
 }
 
-type TabId = 'findings' | 'executive' | 'attack-chains' | 'compliance'
+type TabId = 'findings' | 'executive' | 'attack-chains' | 'compliance' | 'comparison' | 'schedules'
 type AuthType = 'none' | 'bearer' | 'apikey' | 'oauth2' | 'cookie' | 'header' | 'form'
 
 // ─── Markdown Renderer ──────────────────────────────────────────────────────
@@ -105,6 +105,23 @@ export default function DastPage() {
   const [scopeInclude, setScopeInclude] = useState('')
   const [scopeExclude, setScopeExclude] = useState('')
 
+  // ── Comparison state ──
+  const [compBaselineId, setCompBaselineId] = useState<string>('')
+  const [compCurrentId, setCompCurrentId] = useState<string>('')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [compResult, setCompResult] = useState<any>(null)
+  const [compLoading, setCompLoading] = useState(false)
+
+  // ── Schedules state ──
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [schedules, setSchedules] = useState<any[]>([])
+  const [schedulesLoaded, setSchedulesLoaded] = useState(false)
+  const [showNewSchedule, setShowNewSchedule] = useState(false)
+  const [schedName, setSchedName] = useState('')
+  const [schedUrl, setSchedUrl] = useState('')
+  const [schedProfile, setSchedProfile] = useState('full')
+  const [schedFrequency, setSchedFrequency] = useState('weekly')
+
   // ── Scan progress state ──
   const [isScanning, setIsScanning] = useState(false)
   const [scanProgress, setScanProgress] = useState<DastScanProgress | null>(null)
@@ -152,6 +169,37 @@ export default function DastPage() {
         }
       }
     } catch { /* fallback to mock data */ }
+  }, [])
+
+  // ── Run comparison ──
+  const runComparison = useCallback(async () => {
+    if (!compBaselineId || !compCurrentId || compBaselineId === compCurrentId) return
+    setCompLoading(true)
+    setCompResult(null)
+    try {
+      const res = await fetch('/api/dast/compare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baselineScanId: compBaselineId, currentScanId: compCurrentId }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setCompResult(data.comparison)
+      }
+    } catch { /* ignore */ }
+    setCompLoading(false)
+  }, [compBaselineId, compCurrentId])
+
+  // ── Fetch schedules ──
+  const fetchSchedules = useCallback(async () => {
+    try {
+      const res = await fetch('/api/dast/schedules')
+      if (res.ok) {
+        const data = await res.json()
+        setSchedules(data.schedules ?? [])
+        setSchedulesLoaded(true)
+      }
+    } catch { /* ignore */ }
   }, [])
 
   useEffect(() => {
@@ -648,6 +696,8 @@ export default function DastPage() {
             { id: 'executive' as TabId, label: 'EXECUTIVE SUMMARY', count: null },
             { id: 'attack-chains' as TabId, label: 'ATTACK CHAINS', count: correlationData?.attackChains?.length ?? null },
             { id: 'compliance' as TabId, label: 'COMPLIANCE', count: complianceData?.frameworks?.length ?? null },
+            { id: 'comparison' as TabId, label: 'COMPARE', count: null },
+            { id: 'schedules' as TabId, label: 'SCHEDULES', count: null },
           ]).map(tab => (
             <button
               key={tab.id}
@@ -775,6 +825,39 @@ export default function DastPage() {
         {/* Compliance Tab */}
         {activeTab === 'compliance' && (
           <CompliancePanel complianceData={complianceData} />
+        )}
+
+        {/* Comparison Tab */}
+        {activeTab === 'comparison' && (
+          <ComparisonPanel
+            scans={scans}
+            compBaselineId={compBaselineId}
+            compCurrentId={compCurrentId}
+            setCompBaselineId={setCompBaselineId}
+            setCompCurrentId={setCompCurrentId}
+            compResult={compResult}
+            compLoading={compLoading}
+            runComparison={runComparison}
+          />
+        )}
+
+        {/* Schedules Tab */}
+        {activeTab === 'schedules' && (
+          <SchedulesPanel
+            schedules={schedules}
+            schedulesLoaded={schedulesLoaded}
+            fetchSchedules={fetchSchedules}
+            showNewSchedule={showNewSchedule}
+            setShowNewSchedule={setShowNewSchedule}
+            schedName={schedName}
+            setSchedName={setSchedName}
+            schedUrl={schedUrl}
+            setSchedUrl={setSchedUrl}
+            schedProfile={schedProfile}
+            setSchedProfile={setSchedProfile}
+            schedFrequency={schedFrequency}
+            setSchedFrequency={setSchedFrequency}
+          />
         )}
       </div>
 
@@ -1280,6 +1363,409 @@ function FindingDetail({ finding, onClose }: { finding: DastFinding; onClose: ()
           </pre>
         </>
       )}
+    </div>
+  )
+}
+
+// ─── Comparison Panel ────────────────────────────────────────────────────────
+
+function ComparisonPanel({ scans, compBaselineId, compCurrentId, setCompBaselineId, setCompCurrentId, compResult, compLoading, runComparison }: {
+  scans: DastScan[]
+  compBaselineId: string
+  compCurrentId: string
+  setCompBaselineId: (id: string) => void
+  setCompCurrentId: (id: string) => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  compResult: any
+  compLoading: boolean
+  runComparison: () => void
+}) {
+  const completedScans = scans.filter(s => s.status === 'COMPLETED')
+
+  const trendColor = (dir: string) =>
+    dir === 'improved' ? 'var(--color-scanner)' : dir === 'regressed' ? 'var(--color-critical)' : 'var(--color-text-dim)'
+
+  return (
+    <div>
+      {/* Scan Selector */}
+      <div className="bracket-card bracket-dast" style={{ padding: 16, marginBottom: 16 }}>
+        <div className="mono" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--color-text-dim)', marginBottom: 10 }}>
+          SELECT SCANS TO COMPARE
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr auto', gap: 12, alignItems: 'end' }}>
+          <div>
+            <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>BASELINE (older)</label>
+            <select className="tac-input" style={{ marginTop: 4 }} value={compBaselineId} onChange={e => setCompBaselineId(e.target.value)}>
+              <option value="">Select scan...</option>
+              {completedScans.map(s => (
+                <option key={s.id} value={s.id}>{s.name} — {s.completedAt ? new Date(s.completedAt).toLocaleDateString() : 'N/A'}</option>
+              ))}
+            </select>
+          </div>
+          <div className="mono" style={{ fontSize: 14, color: 'var(--color-text-dim)', paddingBottom: 8 }}>vs</div>
+          <div>
+            <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>CURRENT (newer)</label>
+            <select className="tac-input" style={{ marginTop: 4 }} value={compCurrentId} onChange={e => setCompCurrentId(e.target.value)}>
+              <option value="">Select scan...</option>
+              {completedScans.map(s => (
+                <option key={s.id} value={s.id}>{s.name} — {s.completedAt ? new Date(s.completedAt).toLocaleDateString() : 'N/A'}</option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={runComparison}
+            disabled={!compBaselineId || !compCurrentId || compBaselineId === compCurrentId || compLoading}
+            style={{
+              background: 'var(--color-dast)',
+              color: '#fff',
+              border: 'none',
+              padding: '8px 20px',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              cursor: (!compBaselineId || !compCurrentId || compBaselineId === compCurrentId) ? 'not-allowed' : 'pointer',
+              opacity: (!compBaselineId || !compCurrentId || compBaselineId === compCurrentId) ? 0.5 : 1,
+            }}
+          >
+            {compLoading ? 'COMPARING...' : 'COMPARE'}
+          </button>
+        </div>
+      </div>
+
+      {/* Comparison Results */}
+      {compResult && (
+        <div>
+          {/* Overall Trend */}
+          <div className="bracket-card bracket-dast" style={{ padding: '14px 18px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div className="mono" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--color-text-dim)' }}>OVERALL TREND</div>
+              <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 2 }}>{compResult.summary}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div className="mono" style={{
+                fontSize: 24, fontWeight: 700,
+                color: compResult.trendScore > 0 ? 'var(--color-scanner)' : compResult.trendScore < 0 ? 'var(--color-critical)' : 'var(--color-text-dim)',
+              }}>
+                {compResult.trendScore > 0 ? '+' : ''}{compResult.trendScore}
+              </div>
+              <div className="mono" style={{
+                fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
+                color: trendColor(compResult.overallTrend),
+              }}>
+                {compResult.overallTrend.toUpperCase()}
+              </div>
+            </div>
+          </div>
+
+          {/* Metric Deltas */}
+          <SectionLabel label="METRIC CHANGES" />
+          <div style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', marginBottom: 16 }}>
+            <div className="mono" style={{
+              display: 'grid', gridTemplateColumns: '1fr 80px 80px 80px 70px',
+              padding: '8px 14px', borderBottom: '1px solid var(--color-border)',
+              fontSize: 9, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--color-text-dim)',
+            }}>
+              <span>METRIC</span><span style={{ textAlign: 'right' }}>BASELINE</span><span style={{ textAlign: 'right' }}>CURRENT</span><span style={{ textAlign: 'right' }}>DELTA</span><span style={{ textAlign: 'right' }}>TREND</span>
+            </div>
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            {compResult.deltas.map((d: any) => (
+              <div key={d.metric} style={{
+                display: 'grid', gridTemplateColumns: '1fr 80px 80px 80px 70px',
+                padding: '8px 14px', borderBottom: '1px solid var(--color-border)', alignItems: 'center',
+              }}>
+                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{d.metric}</span>
+                <span className="mono" style={{ fontSize: 12, color: 'var(--color-text-dim)', textAlign: 'right' }}>{d.baseline}</span>
+                <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)', textAlign: 'right' }}>{d.current}</span>
+                <span className="mono" style={{ fontSize: 12, fontWeight: 600, textAlign: 'right', color: trendColor(d.direction) }}>
+                  {d.delta > 0 ? '+' : ''}{d.delta}
+                </span>
+                <span className="mono" style={{ fontSize: 9, fontWeight: 700, textAlign: 'right', letterSpacing: '0.08em', color: trendColor(d.direction) }}>
+                  {d.direction === 'unchanged' ? '—' : d.direction === 'improved' ? '▲' : '▼'} {d.percentage !== 0 ? `${Math.abs(d.percentage)}%` : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* New Findings */}
+          {compResult.findingDiff.newFindings.length > 0 && (
+            <>
+              <SectionLabel label={`NEW FINDINGS (${compResult.findingDiff.newFindings.length})`} />
+              <div style={{ marginBottom: 16 }}>
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                {compResult.findingDiff.newFindings.map((f: any) => (
+                  <div key={f.id} style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-critical)', borderLeft: '3px solid var(--color-critical)', padding: '10px 14px', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>{f.title}</div>
+                      <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 2 }}>{f.affectedUrl}</div>
+                    </div>
+                    <span className={`label-tag sev-${f.severity.toLowerCase()}`}>{f.severity}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Resolved Findings */}
+          {compResult.findingDiff.resolvedFindings.length > 0 && (
+            <>
+              <SectionLabel label={`RESOLVED FINDINGS (${compResult.findingDiff.resolvedFindings.length})`} />
+              <div style={{ marginBottom: 16 }}>
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                {compResult.findingDiff.resolvedFindings.map((f: any) => (
+                  <div key={f.id} style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-scanner)', borderLeft: '3px solid var(--color-scanner)', padding: '10px 14px', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)', textDecoration: 'line-through', opacity: 0.7 }}>{f.title}</div>
+                      <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 2 }}>{f.affectedUrl}</div>
+                    </div>
+                    <span className="mono" style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-scanner)', letterSpacing: '0.08em' }}>RESOLVED</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Persistent Findings */}
+          {compResult.findingDiff.persistentFindings.length > 0 && (
+            <>
+              <SectionLabel label={`PERSISTENT FINDINGS (${compResult.findingDiff.persistentFindings.length})`} />
+              <div style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', padding: 14, marginBottom: 16 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                  {compResult.findingDiff.persistentFindings.map((f: any) => (
+                    <span key={f.id} className="mono" style={{ fontSize: 10, background: 'var(--color-bg-elevated)', padding: '2px 8px', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)' }}>
+                      {f.title.length > 35 ? f.title.substring(0, 35) + '...' : f.title}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {!compResult && !compLoading && (
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-dim)' }}>
+          <div style={{ fontSize: 14, marginBottom: 8 }}>Select two scans to compare</div>
+          <div className="mono" style={{ fontSize: 11 }}>Choose a baseline and current scan to see trends, new findings, and resolved issues.</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Schedules Panel ─────────────────────────────────────────────────────────
+
+function SchedulesPanel({ schedules, schedulesLoaded, fetchSchedules, showNewSchedule, setShowNewSchedule, schedName, setSchedName, schedUrl, setSchedUrl, schedProfile, setSchedProfile, schedFrequency, setSchedFrequency }: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  schedules: any[]
+  schedulesLoaded: boolean
+  fetchSchedules: () => void
+  showNewSchedule: boolean
+  setShowNewSchedule: (v: boolean) => void
+  schedName: string
+  setSchedName: (v: string) => void
+  schedUrl: string
+  setSchedUrl: (v: string) => void
+  schedProfile: string
+  setSchedProfile: (v: string) => void
+  schedFrequency: string
+  setSchedFrequency: (v: string) => void
+}) {
+  useEffect(() => {
+    if (!schedulesLoaded) fetchSchedules()
+  }, [schedulesLoaded, fetchSchedules])
+
+  const statusColor = (s: string) =>
+    s === 'active' ? 'var(--color-scanner)' : s === 'paused' ? 'var(--color-medium)' : 'var(--color-text-dim)'
+
+  const freqLabel: Record<string, string> = {
+    daily: 'Daily', weekly: 'Weekly', biweekly: 'Biweekly', monthly: 'Monthly', quarterly: 'Quarterly',
+  }
+
+  async function handleCreateSchedule() {
+    if (!schedName.trim() || !schedUrl.trim()) return
+    try {
+      await fetch('/api/dast/schedules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', name: schedName.trim(), targetUrl: schedUrl.trim(), scanProfile: schedProfile, frequency: schedFrequency }),
+      })
+      setShowNewSchedule(false)
+      setSchedName(''); setSchedUrl(''); setSchedProfile('full'); setSchedFrequency('weekly')
+      fetchSchedules()
+    } catch { /* ignore */ }
+  }
+
+  async function toggleStatus(id: string, currentStatus: string) {
+    const newStatus = currentStatus === 'active' ? 'paused' : 'active'
+    try {
+      await fetch('/api/dast/schedules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update', id, status: newStatus }),
+      })
+      fetchSchedules()
+    } catch { /* ignore */ }
+  }
+
+  async function handleDelete(id: string) {
+    try {
+      await fetch('/api/dast/schedules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', id }),
+      })
+      fetchSchedules()
+    } catch { /* ignore */ }
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div>
+          <div className="mono" style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-secondary)', letterSpacing: '0.08em' }}>
+            Recurring Scan Schedules
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 2 }}>
+            Automated DAST scans run on configured intervals
+          </div>
+        </div>
+        <button
+          onClick={() => setShowNewSchedule(!showNewSchedule)}
+          style={{
+            background: 'var(--color-dast)', color: '#fff', border: 'none',
+            padding: '6px 16px', fontFamily: 'var(--font-mono)', fontSize: 10,
+            fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer',
+          }}
+        >
+          + NEW SCHEDULE
+        </button>
+      </div>
+
+      {/* New Schedule Form */}
+      {showNewSchedule && (
+        <div className="bracket-card bracket-dast" style={{ padding: 16, marginBottom: 16 }}>
+          <div className="mono" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--color-dast)', marginBottom: 12 }}>
+            CREATE SCHEDULE
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>SCHEDULE NAME</label>
+              <input className="tac-input" placeholder="Production Weekly Scan" style={{ marginTop: 4 }} value={schedName} onChange={e => setSchedName(e.target.value)} />
+            </div>
+            <div>
+              <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>TARGET URL</label>
+              <input className="tac-input" placeholder="https://example.com" style={{ marginTop: 4 }} value={schedUrl} onChange={e => setSchedUrl(e.target.value)} />
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+            <div>
+              <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>SCAN PROFILE</label>
+              <select className="tac-input" style={{ marginTop: 4 }} value={schedProfile} onChange={e => setSchedProfile(e.target.value)}>
+                <option value="full">Full Scan</option>
+                <option value="quick">Quick Scan</option>
+                <option value="api_only">API Only</option>
+                <option value="deep">Deep Scan</option>
+              </select>
+            </div>
+            <div>
+              <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>FREQUENCY</label>
+              <select className="tac-input" style={{ marginTop: 4 }} value={schedFrequency} onChange={e => setSchedFrequency(e.target.value)}>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="biweekly">Every 2 Weeks</option>
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              onClick={handleCreateSchedule}
+              disabled={!schedName.trim() || !schedUrl.trim()}
+              style={{
+                background: 'var(--color-dast)', color: '#fff', border: 'none',
+                padding: '6px 18px', fontFamily: 'var(--font-mono)', fontSize: 10,
+                fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase',
+                cursor: (!schedName.trim() || !schedUrl.trim()) ? 'not-allowed' : 'pointer',
+                opacity: (!schedName.trim() || !schedUrl.trim()) ? 0.5 : 1,
+              }}
+            >
+              CREATE
+            </button>
+            <button
+              onClick={() => setShowNewSchedule(false)}
+              style={{
+                background: 'transparent', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)',
+                padding: '6px 14px', fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', cursor: 'pointer',
+              }}
+            >
+              CANCEL
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Schedule List */}
+      {schedules.length === 0 && schedulesLoaded && (
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-dim)' }}>
+          <div style={{ fontSize: 14, marginBottom: 8 }}>No schedules configured</div>
+          <div className="mono" style={{ fontSize: 11 }}>Create a schedule to run automated recurring DAST scans.</div>
+        </div>
+      )}
+
+      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+      {schedules.map((sched: any) => (
+        <div key={sched.id} className="bracket-card" style={{ padding: 16, marginBottom: 10, borderColor: statusColor(sched.status) }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>{sched.name}</span>
+                <span className="mono" style={{ fontSize: 9, fontWeight: 700, color: statusColor(sched.status), letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  {sched.status}
+                </span>
+              </div>
+              <div className="mono" style={{ fontSize: 11, color: 'var(--color-dast)', marginBottom: 6 }}>{sched.targetUrl}</div>
+              <div style={{ display: 'flex', gap: 16, fontSize: 11, color: 'var(--color-text-dim)' }}>
+                <span><strong style={{ color: 'var(--color-text-secondary)' }}>Profile:</strong> {sched.scanProfile}</span>
+                <span><strong style={{ color: 'var(--color-text-secondary)' }}>Frequency:</strong> {freqLabel[sched.frequency] ?? sched.frequency}</span>
+                <span><strong style={{ color: 'var(--color-text-secondary)' }}>Runs:</strong> {sched.totalRuns}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 16, fontSize: 11, color: 'var(--color-text-dim)', marginTop: 4 }}>
+                <span><strong style={{ color: 'var(--color-text-secondary)' }}>Next:</strong> {sched.nextRunAt ? new Date(sched.nextRunAt).toLocaleString() : 'N/A'}</span>
+                <span><strong style={{ color: 'var(--color-text-secondary)' }}>Last:</strong> {sched.lastRunAt ? new Date(sched.lastRunAt).toLocaleString() : 'Never'}</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                onClick={() => toggleStatus(sched.id, sched.status)}
+                className="mono"
+                style={{
+                  background: 'transparent', border: '1px solid var(--color-border)',
+                  color: sched.status === 'active' ? 'var(--color-medium)' : 'var(--color-scanner)',
+                  padding: '4px 10px', fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', cursor: 'pointer',
+                }}
+              >
+                {sched.status === 'active' ? 'PAUSE' : 'RESUME'}
+              </button>
+              <button
+                onClick={() => handleDelete(sched.id)}
+                className="mono"
+                style={{
+                  background: 'transparent', border: '1px solid var(--color-border)',
+                  color: 'var(--color-critical)', padding: '4px 10px', fontSize: 9,
+                  fontWeight: 600, letterSpacing: '0.08em', cursor: 'pointer',
+                }}
+              >
+                DELETE
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

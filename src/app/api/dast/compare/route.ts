@@ -1,0 +1,104 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { isDatabaseReachable, prisma } from '@/lib/db'
+import { compareScans, type ScanComparisonInput } from '@/lib/dast/comparison/scan-comparator'
+import { MOCK_DAST_SCANS, MOCK_DAST_FINDINGS } from '@/lib/mock-data/dast'
+
+/**
+ * POST /api/dast/compare — Compare two DAST scans
+ * Body: { baselineScanId: string, currentScanId: string }
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { baselineScanId, currentScanId } = body
+
+    if (!baselineScanId || !currentScanId) {
+      return NextResponse.json({ error: 'Both baselineScanId and currentScanId are required' }, { status: 400 })
+    }
+
+    if (baselineScanId === currentScanId) {
+      return NextResponse.json({ error: 'Cannot compare a scan with itself' }, { status: 400 })
+    }
+
+    const dbOk = await isDatabaseReachable()
+
+    if (!dbOk) {
+      // Use mock data
+      const baselineScan = MOCK_DAST_SCANS.find(s => s.id === baselineScanId)
+      const currentScan = MOCK_DAST_SCANS.find(s => s.id === currentScanId)
+
+      if (!baselineScan || !currentScan) {
+        return NextResponse.json({ error: 'One or both scans not found' }, { status: 404 })
+      }
+
+      const baselineFindings = MOCK_DAST_FINDINGS.filter(f => f.scanId === baselineScanId).map(f => ({
+        id: f.id, type: f.type, severity: f.severity, title: f.title,
+        affectedUrl: f.affectedUrl, affectedParameter: f.affectedParameter,
+        cvssScore: f.cvssScore, owaspCategory: f.owaspCategory, cweId: f.cweId, riskScore: f.riskScore,
+      }))
+      const currentFindings = MOCK_DAST_FINDINGS.filter(f => f.scanId === currentScanId).map(f => ({
+        id: f.id, type: f.type, severity: f.severity, title: f.title,
+        affectedUrl: f.affectedUrl, affectedParameter: f.affectedParameter,
+        cvssScore: f.cvssScore, owaspCategory: f.owaspCategory, cweId: f.cweId, riskScore: f.riskScore,
+      }))
+
+      const baseInput: ScanComparisonInput = {
+        ...baselineScan, findings: baselineFindings,
+      }
+      const curInput: ScanComparisonInput = {
+        ...currentScan, findings: currentFindings,
+      }
+
+      const result = compareScans(baseInput, curInput)
+      return NextResponse.json({ comparison: result, demo: true })
+    }
+
+    // Real DB comparison
+    const [baselineScan, currentScan] = await Promise.all([
+      prisma.dastScan.findUnique({ where: { id: baselineScanId }, include: { dastFindings: true } }),
+      prisma.dastScan.findUnique({ where: { id: currentScanId }, include: { dastFindings: true } }),
+    ])
+
+    if (!baselineScan || !currentScan) {
+      return NextResponse.json({ error: 'One or both scans not found' }, { status: 404 })
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function toInput(scan: any): ScanComparisonInput {
+      return {
+        id: scan.id,
+        name: scan.name,
+        targetUrl: scan.targetUrl,
+        riskScore: scan.riskScore ?? 0,
+        criticalCount: scan.criticalCount ?? 0,
+        highCount: scan.highCount ?? 0,
+        mediumCount: scan.mediumCount ?? 0,
+        lowCount: scan.lowCount ?? 0,
+        infoCount: scan.infoCount ?? 0,
+        endpointsDiscovered: scan.endpointsDiscovered ?? 0,
+        endpointsTested: scan.endpointsTested ?? 0,
+        payloadsSent: scan.payloadsSent ?? 0,
+        completedAt: scan.completedAt?.toISOString() ?? null,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        findings: scan.dastFindings.map((f: any) => ({
+          id: f.id,
+          type: f.type,
+          severity: f.severity,
+          title: f.title,
+          affectedUrl: f.affectedUrl,
+          affectedParameter: f.affectedParameter,
+          cvssScore: f.cvssScore,
+          owaspCategory: f.owaspCategory,
+          cweId: f.cweId,
+          riskScore: f.riskScore ?? 0,
+        })),
+      }
+    }
+
+    const result = compareScans(toInput(baselineScan), toInput(currentScan))
+    return NextResponse.json({ comparison: result })
+  } catch (error) {
+    console.error('POST /api/dast/compare error:', error)
+    return NextResponse.json({ error: 'Failed to compare scans' }, { status: 500 })
+  }
+}
