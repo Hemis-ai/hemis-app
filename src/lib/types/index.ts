@@ -124,6 +124,9 @@ export interface DastScan {
   lowCount:            number
   infoCount:           number
   executiveSummary:    string | null
+  aiCorrelationData:   string | null
+  aiComplianceData:    string | null
+  techStackDetected:   string[]
   reportUrl:           string | null
   startedAt:           string | null
   completedAt:         string | null
@@ -148,6 +151,7 @@ export interface DastFinding {
   payload:           string | null
   remediation:       string
   remediationCode:   string | null
+  aiEnrichmentData:  string | null
   pciDssRefs:        string[]
   soc2Refs:          string[]
   mitreAttackIds:    string[]

@@ -10,12 +10,64 @@ const SEV_ORDER: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW
 const PHASE_LABELS: Record<string, string> = {
   initializing: 'Initializing',
   crawling: 'Crawling Endpoints',
+  auth_testing: 'Auth & Session Testing',
   scanning: 'Active Scanning',
   extracting: 'Extracting Alerts',
   analyzing: 'AI Analysis',
   summarizing: 'Generating Summary',
   complete: 'Complete',
   failed: 'Failed',
+}
+
+type TabId = 'findings' | 'executive' | 'attack-chains' | 'compliance'
+type AuthType = 'none' | 'bearer' | 'apikey' | 'oauth2' | 'cookie' | 'header' | 'form'
+
+// ─── Markdown Renderer ──────────────────────────────────────────────────────
+
+function renderMarkdown(md: string) {
+  const lines = md.split('\n')
+  const elements: React.ReactNode[] = []
+  let inList = false
+  let listItems: React.ReactNode[] = []
+
+  const flushList = () => {
+    if (listItems.length > 0) {
+      elements.push(<ul key={`ul-${elements.length}`} style={{ paddingLeft: 18, marginBottom: 10 }}>{listItems}</ul>)
+      listItems = []
+      inList = false
+    }
+  }
+
+  lines.forEach((line, i) => {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('## ')) {
+      flushList()
+      elements.push(
+        <h3 key={`h-${i}`} style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-dast)', marginTop: 16, marginBottom: 6, letterSpacing: '0.02em' }}>
+          {trimmed.replace('## ', '')}
+        </h3>
+      )
+    } else if (trimmed.startsWith('- ')) {
+      inList = true
+      const text = trimmed.replace(/^- /, '')
+      const boldMatch = text.match(/^\*\*(.+?)\*\*(.*)$/)
+      listItems.push(
+        <li key={`li-${i}`} style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.7, marginBottom: 2 }}>
+          {boldMatch ? <><strong style={{ color: 'var(--color-text-primary)' }}>{boldMatch[1]}</strong>{boldMatch[2]}</> : text}
+        </li>
+      )
+    } else if (trimmed === '') {
+      flushList()
+    } else {
+      flushList()
+      const rendered = trimmed.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+      elements.push(
+        <p key={`p-${i}`} style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.7, marginBottom: 8 }} dangerouslySetInnerHTML={{ __html: rendered }} />
+      )
+    }
+  })
+  flushList()
+  return elements
 }
 
 // ─── Page ───────────────────────────────────────────────────────────────────
@@ -26,16 +78,51 @@ export default function DastPage() {
   const [findings, setFindings] = useState<DastFinding[]>(MOCK_DAST_FINDINGS)
   const [severityFilter, setSeverityFilter] = useState<Severity | 'ALL'>('ALL')
   const [selectedFinding, setSelectedFinding] = useState<DastFinding | null>(null)
+  const [activeTab, setActiveTab] = useState<TabId>('findings')
   const [showNewScan, setShowNewScan] = useState(false)
   const [newScanName, setNewScanName] = useState('')
   const [newScanUrl, setNewScanUrl] = useState('')
   const [newScanProfile, setNewScanProfile] = useState<'full' | 'quick' | 'api_only' | 'deep'>('full')
+
+  // ── Advanced config state ──
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [authType, setAuthType] = useState<AuthType>('none')
+  const [authBearerToken, setAuthBearerToken] = useState('')
+  const [authApiKey, setAuthApiKey] = useState('')
+  const [authApiKeyHeader, setAuthApiKeyHeader] = useState('X-API-Key')
+  const [authOauth2TokenUrl, setAuthOauth2TokenUrl] = useState('')
+  const [authOauth2ClientId, setAuthOauth2ClientId] = useState('')
+  const [authOauth2ClientSecret, setAuthOauth2ClientSecret] = useState('')
+  const [authOauth2Scope, setAuthOauth2Scope] = useState('')
+  const [authCookieValue, setAuthCookieValue] = useState('')
+  const [authHeaderName, setAuthHeaderName] = useState('')
+  const [authHeaderValue, setAuthHeaderValue] = useState('')
+  const [authFormLoginUrl, setAuthFormLoginUrl] = useState('')
+  const [authFormUsername, setAuthFormUsername] = useState('')
+  const [authFormPassword, setAuthFormPassword] = useState('')
+  const [authFormUsernameField, setAuthFormUsernameField] = useState('username')
+  const [authFormPasswordField, setAuthFormPasswordField] = useState('password')
+  const [scopeInclude, setScopeInclude] = useState('')
+  const [scopeExclude, setScopeExclude] = useState('')
 
   // ── Scan progress state ──
   const [isScanning, setIsScanning] = useState(false)
   const [scanProgress, setScanProgress] = useState<DastScanProgress | null>(null)
   const progressRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // ── Build auth config from form state ──
+  function buildAuthConfig() {
+    switch (authType) {
+      case 'bearer': return { type: 'bearer' as const, token: authBearerToken }
+      case 'apikey': return { type: 'apikey' as const, key: authApiKey, header: authApiKeyHeader }
+      case 'oauth2': return { type: 'oauth2' as const, tokenUrl: authOauth2TokenUrl, clientId: authOauth2ClientId, clientSecret: authOauth2ClientSecret, scope: authOauth2Scope || undefined }
+      case 'cookie': return { type: 'cookie' as const, value: authCookieValue }
+      case 'header': return { type: 'header' as const, name: authHeaderName, value: authHeaderValue }
+      case 'form': return { type: 'form' as const, loginUrl: authFormLoginUrl, usernameField: authFormUsernameField, passwordField: authFormPasswordField, username: authFormUsername, password: authFormPassword }
+      default: return { type: 'none' as const }
+    }
+  }
 
   // ── Fetch scans from API on mount ──
   const fetchScans = useCallback(async () => {
@@ -88,11 +175,16 @@ export default function DastPage() {
 
   // ── Start real scan via API ──
   async function startRealScan(name: string, targetUrl: string, scanProfile: string) {
+    const authConfig = buildAuthConfig()
+    const scopeConfig = {
+      includePaths: scopeInclude.split('\n').map(s => s.trim()).filter(Boolean),
+      excludePaths: scopeExclude.split('\n').map(s => s.trim()).filter(Boolean),
+    }
     try {
       const res = await fetch('/api/dast/scans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, targetUrl, scanProfile }),
+        body: JSON.stringify({ name, targetUrl, scanProfile, authConfig, scope: scopeConfig }),
       })
       if (res.ok) {
         const data = await res.json()
@@ -131,13 +223,15 @@ export default function DastPage() {
       { p: 5, phase: 'initializing', msg: 'Creating scan session...' },
       { p: 15, phase: 'crawling', msg: 'Spidering target...' },
       { p: 30, phase: 'crawling', msg: 'AJAX spider active...' },
-      { p: 40, phase: 'crawling', msg: '87 endpoints discovered' },
-      { p: 55, phase: 'scanning', msg: 'Active scan: 30%' },
-      { p: 70, phase: 'scanning', msg: 'Active scan: 65%' },
-      { p: 85, phase: 'scanning', msg: 'Active scan: 100%' },
+      { p: 38, phase: 'crawling', msg: '87 endpoints discovered' },
+      { p: 45, phase: 'auth_testing', msg: 'Testing authentication flows...' },
+      { p: 52, phase: 'auth_testing', msg: 'Session management analysis...' },
+      { p: 58, phase: 'scanning', msg: 'Active scan: 20%' },
+      { p: 70, phase: 'scanning', msg: 'Active scan: 60%' },
+      { p: 82, phase: 'scanning', msg: 'Active scan: 100%' },
       { p: 88, phase: 'extracting', msg: 'Extracting 14 alerts...' },
       { p: 92, phase: 'analyzing', msg: 'AI analyzing finding 3/14...' },
-      { p: 96, phase: 'analyzing', msg: 'AI analyzing finding 12/14...' },
+      { p: 96, phase: 'analyzing', msg: 'AI correlating attack chains...' },
       { p: 98, phase: 'summarizing', msg: 'Generating executive summary...' },
       { p: 100, phase: 'complete', msg: 'Scan completed' },
     ]
@@ -165,6 +259,15 @@ export default function DastPage() {
       }
     }, 1200)
   }
+
+  // ── Parse AI data from selected scan ──
+  let correlationData: { attackChains?: Array<{ chainId: string; name: string; description: string; severity: string; findingIndices: number[]; exploitationSteps: string[]; businessImpact: string; likelihoodOfExploitation: string }>; duplicateGroups?: Array<{ reason: string; findingIndices: number[]; recommendedAction: string }>; riskAmplifiers?: Array<{ description: string; affectedFindings: number[]; amplificationFactor: number }>; overallChainedRiskScore?: number } | null = null
+  let complianceData: { frameworks?: Array<{ name: string; overallStatus: string; controlsAffected: number; totalControlsChecked: number; affectedControls: Array<{ framework: string; controlId: string; controlName: string; status: string; findingIndices: number[]; remediationNote: string }> }>; highestRiskFramework?: string; complianceScore?: number; auditReadiness?: string; keyGaps?: string[] } | null = null
+
+  try { if (selectedScan.aiCorrelationData) correlationData = JSON.parse(selectedScan.aiCorrelationData) } catch { /* skip */ }
+  try { if (selectedScan.aiComplianceData) complianceData = JSON.parse(selectedScan.aiComplianceData) } catch { /* skip */ }
+
+  const scanFindings = findings.filter(f => f.scanId === selectedScan.id).sort((a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5))
 
   return (
     <div className="tac-grid" style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
@@ -240,7 +343,160 @@ export default function DastPage() {
                 </div>
               ))}
             </div>
-            <div style={{ display: 'flex', gap: 10 }}>
+
+            {/* ── Advanced Configuration Toggle ── */}
+            <div
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="mono"
+              style={{
+                fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--color-dast)',
+                cursor: 'pointer', marginBottom: showAdvanced ? 14 : 0, userSelect: 'none',
+              }}
+            >
+              {showAdvanced ? '▾' : '▸'} ADVANCED CONFIGURATION
+            </div>
+
+            {showAdvanced && (
+              <div style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border)', padding: 16, marginBottom: 16 }}>
+                {/* Auth Type Selector */}
+                <div className="mono" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--color-text-dim)', marginBottom: 8 }}>
+                  AUTHENTICATION
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+                  {(['none', 'bearer', 'apikey', 'oauth2', 'cookie', 'header', 'form'] as const).map(at => (
+                    <button
+                      key={at}
+                      onClick={() => setAuthType(at)}
+                      className="mono"
+                      style={{
+                        background: authType === at ? 'var(--color-dast-dim)' : 'transparent',
+                        border: `1px solid ${authType === at ? 'var(--color-dast)' : 'var(--color-border)'}`,
+                        color: authType === at ? 'var(--color-dast)' : 'var(--color-text-dim)',
+                        padding: '4px 10px', fontSize: 10, fontWeight: 600, letterSpacing: '0.08em',
+                        cursor: 'pointer', textTransform: 'uppercase',
+                      }}
+                    >
+                      {at}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Auth-specific fields */}
+                {authType === 'bearer' && (
+                  <div style={{ marginBottom: 14 }}>
+                    <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>BEARER TOKEN</label>
+                    <input className="tac-input" placeholder="eyJhbGciOiJIUzI1NiIs..." style={{ marginTop: 4 }} value={authBearerToken} onChange={e => setAuthBearerToken(e.target.value)} />
+                  </div>
+                )}
+                {authType === 'apikey' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                    <div>
+                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>API KEY</label>
+                      <input className="tac-input" placeholder="sk-..." style={{ marginTop: 4 }} value={authApiKey} onChange={e => setAuthApiKey(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>HEADER NAME</label>
+                      <input className="tac-input" placeholder="X-API-Key" style={{ marginTop: 4 }} value={authApiKeyHeader} onChange={e => setAuthApiKeyHeader(e.target.value)} />
+                    </div>
+                  </div>
+                )}
+                {authType === 'oauth2' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                    <div>
+                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>TOKEN URL</label>
+                      <input className="tac-input" placeholder="https://auth.example.com/token" style={{ marginTop: 4 }} value={authOauth2TokenUrl} onChange={e => setAuthOauth2TokenUrl(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>CLIENT ID</label>
+                      <input className="tac-input" placeholder="client_id" style={{ marginTop: 4 }} value={authOauth2ClientId} onChange={e => setAuthOauth2ClientId(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>CLIENT SECRET</label>
+                      <input className="tac-input" type="password" placeholder="client_secret" style={{ marginTop: 4 }} value={authOauth2ClientSecret} onChange={e => setAuthOauth2ClientSecret(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>SCOPE (optional)</label>
+                      <input className="tac-input" placeholder="read write" style={{ marginTop: 4 }} value={authOauth2Scope} onChange={e => setAuthOauth2Scope(e.target.value)} />
+                    </div>
+                  </div>
+                )}
+                {authType === 'cookie' && (
+                  <div style={{ marginBottom: 14 }}>
+                    <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>COOKIE VALUE</label>
+                    <input className="tac-input" placeholder="session=abc123; token=xyz" style={{ marginTop: 4 }} value={authCookieValue} onChange={e => setAuthCookieValue(e.target.value)} />
+                  </div>
+                )}
+                {authType === 'header' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                    <div>
+                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>HEADER NAME</label>
+                      <input className="tac-input" placeholder="X-Custom-Auth" style={{ marginTop: 4 }} value={authHeaderName} onChange={e => setAuthHeaderName(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>HEADER VALUE</label>
+                      <input className="tac-input" placeholder="custom-token-value" style={{ marginTop: 4 }} value={authHeaderValue} onChange={e => setAuthHeaderValue(e.target.value)} />
+                    </div>
+                  </div>
+                )}
+                {authType === 'form' && (
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
+                      <div>
+                        <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>LOGIN URL</label>
+                        <input className="tac-input" placeholder="https://example.com/login" style={{ marginTop: 4 }} value={authFormLoginUrl} onChange={e => setAuthFormLoginUrl(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>USERNAME</label>
+                        <input className="tac-input" placeholder="testuser" style={{ marginTop: 4 }} value={authFormUsername} onChange={e => setAuthFormUsername(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>PASSWORD</label>
+                        <input className="tac-input" type="password" placeholder="password" style={{ marginTop: 4 }} value={authFormPassword} onChange={e => setAuthFormPassword(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>USERNAME FIELD NAME</label>
+                        <input className="tac-input" placeholder="username" style={{ marginTop: 4 }} value={authFormUsernameField} onChange={e => setAuthFormUsernameField(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>PASSWORD FIELD NAME</label>
+                        <input className="tac-input" placeholder="password" style={{ marginTop: 4 }} value={authFormPasswordField} onChange={e => setAuthFormPasswordField(e.target.value)} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Scope Configuration */}
+                <div className="mono" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--color-text-dim)', marginBottom: 8, marginTop: 10 }}>
+                  SCOPE CONFIGURATION
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>INCLUDE PATHS (one per line)</label>
+                    <textarea
+                      className="tac-input"
+                      placeholder={'/api/*\n/app/*\n/admin/*'}
+                      rows={3}
+                      style={{ marginTop: 4, resize: 'vertical', fontFamily: 'var(--font-mono)', fontSize: 11 }}
+                      value={scopeInclude}
+                      onChange={e => setScopeInclude(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>EXCLUDE PATHS (one per line)</label>
+                    <textarea
+                      className="tac-input"
+                      placeholder={'/logout\n/static/*\n*.pdf'}
+                      rows={3}
+                      style={{ marginTop: 4, resize: 'vertical', fontFamily: 'var(--font-mono)', fontSize: 11 }}
+                      value={scopeExclude}
+                      onChange={e => setScopeExclude(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, marginTop: showAdvanced ? 0 : 16 }}>
               <button
                 onClick={() => {
                   const name = newScanName.trim() || 'DAST Scan'
@@ -248,6 +504,7 @@ export default function DastPage() {
                   if (!url) return
                   startRealScan(name, url, newScanProfile)
                   setNewScanName(''); setNewScanUrl(''); setNewScanProfile('full')
+                  setAuthType('none'); setShowAdvanced(false)
                 }}
                 disabled={!newScanUrl.trim()}
                 style={{
@@ -267,7 +524,7 @@ export default function DastPage() {
                 START SCAN
               </button>
               <button
-                onClick={() => setShowNewScan(false)}
+                onClick={() => { setShowNewScan(false); setShowAdvanced(false) }}
                 style={{
                   background: 'transparent',
                   color: 'var(--color-text-dim)',
@@ -329,7 +586,7 @@ export default function DastPage() {
           {scans.map(s => (
             <div
               key={s.id}
-              onClick={() => { setSelectedScan(s); setSelectedFinding(null); setSeverityFilter('ALL') }}
+              onClick={() => { setSelectedScan(s); setSelectedFinding(null); setSeverityFilter('ALL'); setActiveTab('findings') }}
               style={{
                 flex: 1,
                 background: selectedScan.id === s.id ? 'var(--color-dast-dim)' : 'var(--color-bg-surface)',
@@ -348,6 +605,18 @@ export default function DastPage() {
                 </span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 4 }}>{s.targetUrl}</div>
+              {s.techStackDetected && s.techStackDetected.length > 0 && (
+                <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
+                  {s.techStackDetected.slice(0, 4).map(tech => (
+                    <span key={tech} className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)', background: 'var(--color-bg-elevated)', padding: '1px 6px', letterSpacing: '0.05em' }}>
+                      {tech}
+                    </span>
+                  ))}
+                  {s.techStackDetected.length > 4 && (
+                    <span className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)' }}>+{s.techStackDetected.length - 4}</span>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -372,87 +641,147 @@ export default function DastPage() {
           ))}
         </div>
 
-        {/* ── Severity Filter ── */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
-          {(['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'] as const).map(sev => (
+        {/* ── Tab Navigation ── */}
+        <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: '1px solid var(--color-border)' }}>
+          {([
+            { id: 'findings' as TabId, label: 'FINDINGS', count: totalForScan },
+            { id: 'executive' as TabId, label: 'EXECUTIVE SUMMARY', count: null },
+            { id: 'attack-chains' as TabId, label: 'ATTACK CHAINS', count: correlationData?.attackChains?.length ?? null },
+            { id: 'compliance' as TabId, label: 'COMPLIANCE', count: complianceData?.frameworks?.length ?? null },
+          ]).map(tab => (
             <button
-              key={sev}
-              onClick={() => setSeverityFilter(sev)}
+              key={tab.id}
+              onClick={() => { setActiveTab(tab.id); setSelectedFinding(null) }}
               className="mono"
               style={{
-                background: severityFilter === sev ? 'var(--color-bg-elevated)' : 'transparent',
-                border: `1px solid ${severityFilter === sev ? 'var(--color-border-bright)' : 'var(--color-border)'}`,
-                color: severityFilter === sev ? 'var(--color-text-primary)' : 'var(--color-text-dim)',
-                padding: '4px 12px',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: activeTab === tab.id ? '2px solid var(--color-dast)' : '2px solid transparent',
+                color: activeTab === tab.id ? 'var(--color-dast)' : 'var(--color-text-dim)',
+                padding: '8px 16px',
                 fontSize: 10,
                 fontWeight: 600,
                 letterSpacing: '0.1em',
                 cursor: 'pointer',
+                transition: 'all 0.12s',
               }}
             >
-              {sev} {sev === 'ALL' ? `(${totalForScan})` : ''}
+              {tab.label}{tab.count !== null ? ` (${tab.count})` : ''}
             </button>
           ))}
         </div>
 
-        {/* ── Findings Table ── */}
-        <div style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
-          {/* Header row */}
-          <div className="mono" style={{
-            display: 'grid',
-            gridTemplateColumns: '80px 1fr 100px 80px 60px',
-            padding: '8px 14px',
-            borderBottom: '1px solid var(--color-border)',
-            fontSize: 10,
-            fontWeight: 600,
-            letterSpacing: '0.1em',
-            color: 'var(--color-text-dim)',
-          }}>
-            <span>SEV</span>
-            <span>FINDING</span>
-            <span>OWASP</span>
-            <span>CVSS</span>
-            <span>CONF</span>
-          </div>
+        {/* ── Tab Content ── */}
 
-          {filteredFindings.length === 0 && (
-            <div style={{ padding: 24, textAlign: 'center', color: 'var(--color-text-dim)', fontSize: 13 }}>
-              No findings match the current filter.
+        {/* Findings Tab */}
+        {activeTab === 'findings' && (
+          <>
+            {/* Severity Filter */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+              {(['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'] as const).map(sev => (
+                <button
+                  key={sev}
+                  onClick={() => setSeverityFilter(sev)}
+                  className="mono"
+                  style={{
+                    background: severityFilter === sev ? 'var(--color-bg-elevated)' : 'transparent',
+                    border: `1px solid ${severityFilter === sev ? 'var(--color-border-bright)' : 'var(--color-border)'}`,
+                    color: severityFilter === sev ? 'var(--color-text-primary)' : 'var(--color-text-dim)',
+                    padding: '4px 12px',
+                    fontSize: 10,
+                    fontWeight: 600,
+                    letterSpacing: '0.1em',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {sev} {sev === 'ALL' ? `(${totalForScan})` : ''}
+                </button>
+              ))}
             </div>
-          )}
 
-          {filteredFindings.map(f => (
-            <div
-              key={f.id}
-              onClick={() => setSelectedFinding(selectedFinding?.id === f.id ? null : f)}
-              style={{
+            {/* Findings Table */}
+            <div style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
+              <div className="mono" style={{
                 display: 'grid',
                 gridTemplateColumns: '80px 1fr 100px 80px 60px',
-                padding: '10px 14px',
+                padding: '8px 14px',
                 borderBottom: '1px solid var(--color-border)',
-                cursor: 'pointer',
-                background: selectedFinding?.id === f.id ? 'var(--color-dast-dim)' : 'transparent',
-                transition: 'background 0.1s',
-                alignItems: 'center',
-              }}
-            >
-              <span className={`label-tag sev-${f.severity.toLowerCase()}`}>{f.severity}</span>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>{f.title}</div>
-                <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 2 }}>{f.affectedUrl}</div>
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: '0.1em',
+                color: 'var(--color-text-dim)',
+              }}>
+                <span>SEV</span>
+                <span>FINDING</span>
+                <span>OWASP</span>
+                <span>CVSS</span>
+                <span>CONF</span>
               </div>
-              <span className="mono" style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>{f.owaspCategory.split(' ')[0]}</span>
-              <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: cvssColor(f.cvssScore) }}>{f.cvssScore ?? '—'}</span>
-              <span className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)' }}>{f.confidenceScore}%</span>
+
+              {filteredFindings.length === 0 && (
+                <div style={{ padding: 24, textAlign: 'center', color: 'var(--color-text-dim)', fontSize: 13 }}>
+                  No findings match the current filter.
+                </div>
+              )}
+
+              {filteredFindings.map(f => (
+                <div
+                  key={f.id}
+                  onClick={() => setSelectedFinding(selectedFinding?.id === f.id ? null : f)}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '80px 1fr 100px 80px 60px',
+                    padding: '10px 14px',
+                    borderBottom: '1px solid var(--color-border)',
+                    cursor: 'pointer',
+                    background: selectedFinding?.id === f.id ? 'var(--color-dast-dim)' : 'transparent',
+                    transition: 'background 0.1s',
+                    alignItems: 'center',
+                  }}
+                >
+                  <span className={`label-tag sev-${f.severity.toLowerCase()}`}>{f.severity}</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>{f.title}</div>
+                    <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 2 }}>{f.affectedUrl}</div>
+                  </div>
+                  <span className="mono" style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>{f.owaspCategory.split(' ')[0]}</span>
+                  <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: cvssColor(f.cvssScore) }}>{f.cvssScore ?? '\u2014'}</span>
+                  <span className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)' }}>{f.confidenceScore}%</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </>
+        )}
+
+        {/* Executive Summary Tab */}
+        {activeTab === 'executive' && (
+          <div className="bracket-card bracket-dast" style={{ padding: 24 }}>
+            {selectedScan.executiveSummary ? (
+              <div>{renderMarkdown(selectedScan.executiveSummary)}</div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-dim)' }}>
+                <div style={{ fontSize: 14, marginBottom: 8 }}>No executive summary available</div>
+                <div className="mono" style={{ fontSize: 11 }}>Run a scan with AI enrichment enabled to generate an executive summary.</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Attack Chains Tab */}
+        {activeTab === 'attack-chains' && (
+          <AttackChainsPanel correlationData={correlationData} scanFindings={scanFindings} />
+        )}
+
+        {/* Compliance Tab */}
+        {activeTab === 'compliance' && (
+          <CompliancePanel complianceData={complianceData} />
+        )}
       </div>
 
       {/* ═══ Right: Detail Panel ═══ */}
       <div style={{
-        width: selectedFinding ? 420 : 0,
-        minWidth: selectedFinding ? 420 : 0,
+        width: selectedFinding ? 440 : 0,
+        minWidth: selectedFinding ? 440 : 0,
         borderLeft: selectedFinding ? '1px solid var(--color-border)' : 'none',
         background: 'var(--color-bg-surface)',
         overflowY: 'auto',
@@ -464,12 +793,265 @@ export default function DastPage() {
   )
 }
 
+// ─── Attack Chains Panel ────────────────────────────────────────────────────
+
+function AttackChainsPanel({ correlationData, scanFindings }: {
+  correlationData: { attackChains?: Array<{ chainId: string; name: string; description: string; severity: string; findingIndices: number[]; exploitationSteps: string[]; businessImpact: string; likelihoodOfExploitation: string }>; duplicateGroups?: Array<{ reason: string; findingIndices: number[]; recommendedAction: string }>; riskAmplifiers?: Array<{ description: string; affectedFindings: number[]; amplificationFactor: number }>; overallChainedRiskScore?: number } | null
+  scanFindings: DastFinding[]
+}) {
+  if (!correlationData) {
+    return (
+      <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-dim)' }}>
+        <div style={{ fontSize: 14, marginBottom: 8 }}>No attack chain analysis available</div>
+        <div className="mono" style={{ fontSize: 11 }}>Run a scan with AI enrichment to generate attack chain correlation.</div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      {/* Overall Score */}
+      {correlationData.overallChainedRiskScore !== undefined && (
+        <div className="bracket-card bracket-dast" style={{ padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div className="mono" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--color-text-dim)' }}>CHAINED RISK SCORE</div>
+            <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginTop: 2 }}>Combined risk considering attack chain amplification</div>
+          </div>
+          <div className="mono" style={{ fontSize: 28, fontWeight: 700, color: riskColor(correlationData.overallChainedRiskScore) }}>
+            {correlationData.overallChainedRiskScore}
+          </div>
+        </div>
+      )}
+
+      {/* Attack Chains */}
+      {correlationData.attackChains && correlationData.attackChains.length > 0 && (
+        <>
+          <SectionLabel label="ATTACK CHAINS" />
+          {correlationData.attackChains.map((chain) => (
+            <div key={chain.chainId} className="bracket-card" style={{ padding: 16, marginBottom: 12, borderColor: chain.severity === 'CRITICAL' ? 'var(--color-critical)' : chain.severity === 'HIGH' ? 'var(--color-high)' : 'var(--color-medium)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>{chain.name}</div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                    <span className={`label-tag sev-${chain.severity.toLowerCase()}`}>{chain.severity}</span>
+                    <span className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)' }}>
+                      Likelihood: {chain.likelihoodOfExploitation}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.7, marginBottom: 12 }}>{chain.description}</div>
+
+              {/* Exploitation Steps */}
+              <div className="mono" style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-dim)', letterSpacing: '0.1em', marginBottom: 6 }}>EXPLOITATION PATH</div>
+              <div style={{ background: 'var(--color-bg-elevated)', padding: 12, marginBottom: 12 }}>
+                {chain.exploitationSteps.map((step, idx) => (
+                  <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'flex-start' }}>
+                    <span className="mono" style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-dast)', minWidth: 18 }}>{idx + 1}.</span>
+                    <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>{step}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Involved Findings */}
+              <div className="mono" style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-dim)', letterSpacing: '0.1em', marginBottom: 6 }}>INVOLVED FINDINGS</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                {chain.findingIndices.map(idx => {
+                  const f = scanFindings[idx]
+                  return f ? (
+                    <span key={idx} className="mono" style={{ fontSize: 10, background: 'var(--color-bg-elevated)', padding: '2px 8px', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)' }}>
+                      {f.title.length > 40 ? f.title.substring(0, 40) + '...' : f.title}
+                    </span>
+                  ) : null
+                })}
+              </div>
+
+              {/* Business Impact */}
+              <div style={{ fontSize: 12, color: 'var(--color-medium)', fontStyle: 'italic', background: 'var(--color-bg-elevated)', padding: '8px 12px' }}>
+                {chain.businessImpact}
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {/* Risk Amplifiers */}
+      {correlationData.riskAmplifiers && correlationData.riskAmplifiers.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <SectionLabel label="RISK AMPLIFIERS" />
+          {correlationData.riskAmplifiers.map((amp, i) => (
+            <div key={i} style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', padding: '12px 14px', marginBottom: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', flex: 1 }}>{amp.description}</div>
+                <span className="mono" style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-high)', marginLeft: 12 }}>
+                  x{amp.amplificationFactor.toFixed(1)}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Duplicate Groups */}
+      {correlationData.duplicateGroups && correlationData.duplicateGroups.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <SectionLabel label="DUPLICATE / RELATED FINDINGS" />
+          {correlationData.duplicateGroups.map((dup, i) => (
+            <div key={i} style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', padding: '12px 14px', marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 6 }}>{dup.reason}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {dup.findingIndices.map(idx => (
+                    <span key={idx} className="mono" style={{ fontSize: 10, background: 'var(--color-bg-elevated)', padding: '1px 6px', color: 'var(--color-text-dim)' }}>
+                      #{idx}
+                    </span>
+                  ))}
+                </div>
+                <span className="mono" style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-dast)', letterSpacing: '0.08em' }}>
+                  {dup.recommendedAction}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Compliance Panel ───────────────────────────────────────────────────────
+
+function CompliancePanel({ complianceData }: {
+  complianceData: { frameworks?: Array<{ name: string; overallStatus: string; controlsAffected: number; totalControlsChecked: number; affectedControls: Array<{ framework: string; controlId: string; controlName: string; status: string; findingIndices: number[]; remediationNote: string }> }>; highestRiskFramework?: string; complianceScore?: number; auditReadiness?: string; keyGaps?: string[] } | null
+}) {
+  if (!complianceData) {
+    return (
+      <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-dim)' }}>
+        <div style={{ fontSize: 14, marginBottom: 8 }}>No compliance analysis available</div>
+        <div className="mono" style={{ fontSize: 11 }}>Run a scan with AI enrichment to generate compliance mapping.</div>
+      </div>
+    )
+  }
+
+  const statusColors: Record<string, string> = {
+    CRITICAL_GAPS: 'var(--color-critical)',
+    SIGNIFICANT_GAPS: 'var(--color-high)',
+    MINOR_GAPS: 'var(--color-medium)',
+    PASSING: 'var(--color-scanner)',
+  }
+
+  const auditColors: Record<string, string> = {
+    NOT_READY: 'var(--color-critical)',
+    NEEDS_WORK: 'var(--color-high)',
+    MOSTLY_READY: 'var(--color-medium)',
+    READY: 'var(--color-scanner)',
+  }
+
+  const controlStatusColors: Record<string, string> = {
+    FAIL: 'var(--color-critical)',
+    AT_RISK: 'var(--color-high)',
+    NEEDS_REVIEW: 'var(--color-medium)',
+  }
+
+  return (
+    <div>
+      {/* Top-level metrics */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 20 }}>
+        {complianceData.complianceScore !== undefined && (
+          <div className="bracket-card bracket-dast" style={{ padding: '14px 18px', textAlign: 'center' }}>
+            <div className="mono" style={{ fontSize: 28, fontWeight: 700, color: riskColor(100 - complianceData.complianceScore) }}>
+              {complianceData.complianceScore}%
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--color-text-dim)' }}>Compliance Score</div>
+          </div>
+        )}
+        {complianceData.auditReadiness && (
+          <div style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', padding: '14px 18px', textAlign: 'center' }}>
+            <div className="mono" style={{ fontSize: 14, fontWeight: 700, color: auditColors[complianceData.auditReadiness] ?? 'var(--color-text-secondary)' }}>
+              {complianceData.auditReadiness.replace(/_/g, ' ')}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 4 }}>Audit Readiness</div>
+          </div>
+        )}
+        {complianceData.highestRiskFramework && (
+          <div style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', padding: '14px 18px', textAlign: 'center' }}>
+            <div className="mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-high)' }}>
+              {complianceData.highestRiskFramework}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 4 }}>Highest Risk Framework</div>
+          </div>
+        )}
+      </div>
+
+      {/* Frameworks */}
+      {complianceData.frameworks && complianceData.frameworks.map((fw) => (
+        <div key={fw.name} className="bracket-card" style={{ padding: 16, marginBottom: 14, borderColor: statusColors[fw.overallStatus] ?? 'var(--color-border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>{fw.name}</div>
+              <div className="mono" style={{ fontSize: 10, color: statusColors[fw.overallStatus] ?? 'var(--color-text-dim)', marginTop: 2, fontWeight: 600, letterSpacing: '0.08em' }}>
+                {fw.overallStatus.replace(/_/g, ' ')}
+              </div>
+            </div>
+            <div className="mono" style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                {fw.controlsAffected}<span style={{ fontSize: 11, color: 'var(--color-text-dim)' }}>/{fw.totalControlsChecked}</span>
+              </div>
+              <div style={{ fontSize: 9, color: 'var(--color-text-dim)' }}>Controls Affected</div>
+            </div>
+          </div>
+
+          {/* Affected Controls */}
+          {fw.affectedControls && fw.affectedControls.length > 0 && (
+            <div style={{ background: 'var(--color-bg-elevated)', padding: 12 }}>
+              {fw.affectedControls.map((ctrl) => (
+                <div key={ctrl.controlId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '6px 0', borderBottom: '1px solid var(--color-border)' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <span className="mono" style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-dast)' }}>{ctrl.controlId}</span>
+                      <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{ctrl.controlName}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 2 }}>{ctrl.remediationNote}</div>
+                  </div>
+                  <span className="mono" style={{ fontSize: 9, fontWeight: 700, color: controlStatusColors[ctrl.status] ?? 'var(--color-text-dim)', marginLeft: 8, letterSpacing: '0.08em' }}>
+                    {ctrl.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+
+      {/* Key Gaps */}
+      {complianceData.keyGaps && complianceData.keyGaps.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <SectionLabel label="KEY COMPLIANCE GAPS" />
+          <div style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', padding: 14 }}>
+            {complianceData.keyGaps.map((gap, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'flex-start' }}>
+                <span className="mono" style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-high)', minWidth: 18 }}>{i + 1}.</span>
+                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>{gap}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Finding Detail Panel ────────────────────────────────────────────────────
 
 function FindingDetail({ finding, onClose }: { finding: DastFinding; onClose: () => void }) {
-  let remCode: { vulnerableCode?: string; remediatedCode?: string; explanation?: string } | null = null
+  let remCode: { vulnerableCode?: string; remediatedCode?: string; explanation?: string; language?: string; framework?: string; configurationFix?: string; securityHeaders?: string; wafRule?: string } | null = null
   if (finding.remediationCode) {
     try { remCode = JSON.parse(finding.remediationCode) } catch { /* skip */ }
+  }
+
+  let aiData: { attackScenario?: string; falsePositiveLikelihood?: string; falsePositiveReason?: string; priorityScore?: number; priorityReason?: string; relatedCwes?: string[]; mitigationUrgency?: string; dataAtRisk?: string; exploitDifficulty?: string } | null = null
+  if (finding.aiEnrichmentData) {
+    try { aiData = JSON.parse(finding.aiEnrichmentData) } catch { /* skip */ }
   }
 
   return (
@@ -488,8 +1070,34 @@ function FindingDetail({ finding, onClose }: { finding: DastFinding; onClose: ()
             <span className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)' }}>{finding.owaspCategory}</span>
           </div>
         </div>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer', fontSize: 16 }}>✕</button>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer', fontSize: 16 }}>&#x2715;</button>
       </div>
+
+      {/* AI Priority & Urgency */}
+      {aiData && (aiData.priorityScore || aiData.mitigationUrgency) && (
+        <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+          {aiData.priorityScore && (
+            <div style={{ background: 'var(--color-bg-elevated)', padding: '8px 14px', textAlign: 'center', flex: 1 }}>
+              <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: riskColor(aiData.priorityScore) }}>{aiData.priorityScore}</div>
+              <div style={{ fontSize: 9, color: 'var(--color-text-dim)' }}>AI Priority</div>
+            </div>
+          )}
+          {aiData.mitigationUrgency && (
+            <div style={{ background: 'var(--color-bg-elevated)', padding: '8px 14px', textAlign: 'center', flex: 1 }}>
+              <div className="mono" style={{ fontSize: 12, fontWeight: 700, color: aiData.mitigationUrgency === 'IMMEDIATE' ? 'var(--color-critical)' : aiData.mitigationUrgency === 'HIGH' ? 'var(--color-high)' : 'var(--color-medium)' }}>
+                {aiData.mitigationUrgency}
+              </div>
+              <div style={{ fontSize: 9, color: 'var(--color-text-dim)', marginTop: 2 }}>Urgency</div>
+            </div>
+          )}
+          {aiData.exploitDifficulty && (
+            <div style={{ background: 'var(--color-bg-elevated)', padding: '8px 14px', textAlign: 'center', flex: 1 }}>
+              <div className="mono" style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-secondary)' }}>{aiData.exploitDifficulty}</div>
+              <div style={{ fontSize: 9, color: 'var(--color-text-dim)', marginTop: 2 }}>Exploit Difficulty</div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Meta */}
       <div style={{ background: 'var(--color-bg-elevated)', padding: '10px 12px', marginBottom: 14, fontSize: 11 }}>
@@ -507,6 +1115,39 @@ function FindingDetail({ finding, onClose }: { finding: DastFinding; onClose: ()
           </div>
         )}
       </div>
+
+      {/* AI Attack Scenario */}
+      {aiData?.attackScenario && (
+        <>
+          <SectionLabel label="ATTACK SCENARIO" />
+          <div style={{ fontSize: 12, color: 'var(--color-high)', lineHeight: 1.7, marginBottom: 14, background: 'var(--color-bg-elevated)', padding: '10px 12px' }}>
+            {aiData.attackScenario}
+          </div>
+        </>
+      )}
+
+      {/* AI Data at Risk */}
+      {aiData?.dataAtRisk && (
+        <>
+          <SectionLabel label="DATA AT RISK" />
+          <div style={{ fontSize: 12, color: 'var(--color-critical)', lineHeight: 1.7, marginBottom: 14, background: 'var(--color-bg-elevated)', padding: '10px 12px' }}>
+            {aiData.dataAtRisk}
+          </div>
+        </>
+      )}
+
+      {/* False Positive Assessment */}
+      {aiData?.falsePositiveLikelihood && (
+        <>
+          <SectionLabel label="FALSE POSITIVE ASSESSMENT" />
+          <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.7, marginBottom: 14, background: 'var(--color-bg-elevated)', padding: '10px 12px' }}>
+            <span className="mono" style={{ fontWeight: 600, color: aiData.falsePositiveLikelihood === 'LOW' ? 'var(--color-scanner)' : aiData.falsePositiveLikelihood === 'MEDIUM' ? 'var(--color-medium)' : 'var(--color-high)' }}>
+              {aiData.falsePositiveLikelihood}
+            </span>
+            {aiData.falsePositiveReason && <span style={{ marginLeft: 8 }}>{aiData.falsePositiveReason}</span>}
+          </div>
+        </>
+      )}
 
       {/* Description */}
       <SectionLabel label="DESCRIPTION" />
@@ -531,6 +1172,18 @@ function FindingDetail({ finding, onClose }: { finding: DastFinding; onClose: ()
         <>
           <SectionLabel label="CODE FIX" />
           <div style={{ marginBottom: 16 }}>
+            {remCode.language && (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                <span className="mono" style={{ fontSize: 9, background: 'var(--color-dast-dim)', color: 'var(--color-dast)', padding: '2px 8px', letterSpacing: '0.08em' }}>
+                  {remCode.language}
+                </span>
+                {remCode.framework && (
+                  <span className="mono" style={{ fontSize: 9, background: 'var(--color-bg-elevated)', color: 'var(--color-text-dim)', padding: '2px 8px', letterSpacing: '0.08em' }}>
+                    {remCode.framework}
+                  </span>
+                )}
+              </div>
+            )}
             <div className="mono" style={{ fontSize: 10, color: 'var(--color-hemis)', marginBottom: 4, fontWeight: 600 }}>VULNERABLE:</div>
             <pre className="terminal" style={{ padding: '8px 10px', fontSize: 11, whiteSpace: 'pre-wrap', marginBottom: 8 }}>
               <code className="terminal-error">{remCode.vulnerableCode}</code>
@@ -540,8 +1193,52 @@ function FindingDetail({ finding, onClose }: { finding: DastFinding; onClose: ()
               <code className="terminal-success">{remCode.remediatedCode}</code>
             </pre>
             {remCode.explanation && (
-              <div style={{ fontSize: 11, color: 'var(--color-text-dim)', fontStyle: 'italic' }}>{remCode.explanation}</div>
+              <div style={{ fontSize: 11, color: 'var(--color-text-dim)', fontStyle: 'italic', marginBottom: 8 }}>{remCode.explanation}</div>
             )}
+
+            {/* Configuration Fix */}
+            {remCode.configurationFix && (
+              <>
+                <div className="mono" style={{ fontSize: 10, color: 'var(--color-dast)', marginBottom: 4, fontWeight: 600, marginTop: 10 }}>CONFIGURATION FIX:</div>
+                <pre className="terminal" style={{ padding: '8px 10px', fontSize: 11, whiteSpace: 'pre-wrap', marginBottom: 8 }}>
+                  <code style={{ color: 'var(--color-text-secondary)' }}>{remCode.configurationFix}</code>
+                </pre>
+              </>
+            )}
+
+            {/* Security Headers */}
+            {remCode.securityHeaders && (
+              <>
+                <div className="mono" style={{ fontSize: 10, color: 'var(--color-blueteam)', marginBottom: 4, fontWeight: 600, marginTop: 10 }}>SECURITY HEADERS:</div>
+                <pre className="terminal" style={{ padding: '8px 10px', fontSize: 11, whiteSpace: 'pre-wrap', marginBottom: 8 }}>
+                  <code style={{ color: 'var(--color-text-secondary)' }}>{remCode.securityHeaders}</code>
+                </pre>
+              </>
+            )}
+
+            {/* WAF Rule */}
+            {remCode.wafRule && (
+              <>
+                <div className="mono" style={{ fontSize: 10, color: 'var(--color-hemis)', marginBottom: 4, fontWeight: 600, marginTop: 10 }}>WAF RULE:</div>
+                <pre className="terminal" style={{ padding: '8px 10px', fontSize: 11, whiteSpace: 'pre-wrap', marginBottom: 8 }}>
+                  <code style={{ color: 'var(--color-text-secondary)' }}>{remCode.wafRule}</code>
+                </pre>
+              </>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Related CWEs from AI */}
+      {aiData?.relatedCwes && aiData.relatedCwes.length > 0 && (
+        <>
+          <SectionLabel label="RELATED WEAKNESSES" />
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+            {aiData.relatedCwes.map((cwe) => (
+              <span key={cwe} className="mono" style={{ fontSize: 10, background: 'var(--color-bg-elevated)', padding: '2px 8px', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)' }}>
+                {cwe}
+              </span>
+            ))}
           </div>
         </>
       )}
@@ -560,6 +1257,16 @@ function FindingDetail({ finding, onClose }: { finding: DastFinding; onClose: ()
             {finding.mitreAttackIds.map((r: string) => (
               <span key={r} className="label-tag" style={{ color: 'var(--color-hemis)', borderColor: 'var(--color-hemis)', background: 'var(--color-hemis-dim)' }}>ATT&CK {r}</span>
             ))}
+          </div>
+        </>
+      )}
+
+      {/* AI Priority Reason */}
+      {aiData?.priorityReason && (
+        <>
+          <SectionLabel label="PRIORITY RATIONALE" />
+          <div style={{ fontSize: 11, color: 'var(--color-text-dim)', lineHeight: 1.7, marginBottom: 16, fontStyle: 'italic' }}>
+            {aiData.priorityReason}
           </div>
         </>
       )}
