@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import type { Severity, DastScan, DastFinding, DastScanProgress } from '@/lib/types'
-import { MOCK_DAST_SCANS, MOCK_DAST_FINDINGS } from '@/lib/mock-data/dast'
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -73,9 +72,9 @@ function renderMarkdown(md: string) {
 // ─── Page ───────────────────────────────────────────────────────────────────
 
 export default function DastPage() {
-  const [scans, setScans] = useState<DastScan[]>(MOCK_DAST_SCANS)
-  const [selectedScan, setSelectedScan] = useState<DastScan>(MOCK_DAST_SCANS[0])
-  const [findings, setFindings] = useState<DastFinding[]>(MOCK_DAST_FINDINGS)
+  const [scans, setScans] = useState<DastScan[]>([])
+  const [selectedScan, setSelectedScan] = useState<DastScan | null>(null)
+  const [findings, setFindings] = useState<DastFinding[]>([])
   const [severityFilter, setSeverityFilter] = useState<Severity | 'ALL'>('ALL')
   const [selectedFinding, setSelectedFinding] = useState<DastFinding | null>(null)
   const [activeTab, setActiveTab] = useState<TabId>('findings')
@@ -149,10 +148,10 @@ export default function DastPage() {
         const data = await res.json()
         if (data.scans?.length > 0) {
           setScans(data.scans)
-          setSelectedScan(data.scans[0])
+          setSelectedScan(prev => prev ?? data.scans[0])
         }
       }
-    } catch { /* fallback to mock data */ }
+    } catch { /* API unavailable */ }
   }, [])
 
   // ── Fetch findings for selected scan ──
@@ -168,7 +167,7 @@ export default function DastPage() {
           })
         }
       }
-    } catch { /* fallback to mock data */ }
+    } catch { /* API unavailable */ }
   }, [])
 
   // ── Run comparison ──
@@ -214,12 +213,14 @@ export default function DastPage() {
     if (selectedScan) fetchFindings(selectedScan.id)
   }, [selectedScan, fetchFindings])
 
-  const filteredFindings = findings
-    .filter(f => f.scanId === selectedScan.id)
-    .filter(f => severityFilter === 'ALL' || f.severity === severityFilter)
-    .sort((a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5))
+  const filteredFindings = selectedScan
+    ? findings
+        .filter(f => f.scanId === selectedScan.id)
+        .filter(f => severityFilter === 'ALL' || f.severity === severityFilter)
+        .sort((a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5))
+    : []
 
-  const totalForScan = findings.filter(f => f.scanId === selectedScan.id).length
+  const totalForScan = selectedScan ? findings.filter(f => f.scanId === selectedScan.id).length : 0
 
   // ── Start real scan via API ──
   async function startRealScan(name: string, targetUrl: string, scanProfile: string) {
@@ -258,8 +259,8 @@ export default function DastPage() {
         }, 2000)
         return
       }
-    } catch { /* fallback to mock scan */ }
-    // Fallback: mock scan
+    } catch { /* API unavailable, fallback to simulated scan */ }
+    // Fallback: simulated scan
     startMockScan()
   }
 
@@ -312,10 +313,12 @@ export default function DastPage() {
   let correlationData: { attackChains?: Array<{ chainId: string; name: string; description: string; severity: string; findingIndices: number[]; exploitationSteps: string[]; businessImpact: string; likelihoodOfExploitation: string }>; duplicateGroups?: Array<{ reason: string; findingIndices: number[]; recommendedAction: string }>; riskAmplifiers?: Array<{ description: string; affectedFindings: number[]; amplificationFactor: number }>; overallChainedRiskScore?: number } | null = null
   let complianceData: { frameworks?: Array<{ name: string; overallStatus: string; controlsAffected: number; totalControlsChecked: number; affectedControls: Array<{ framework: string; controlId: string; controlName: string; status: string; findingIndices: number[]; remediationNote: string }> }>; highestRiskFramework?: string; complianceScore?: number; auditReadiness?: string; keyGaps?: string[] } | null = null
 
-  try { if (selectedScan.aiCorrelationData) correlationData = JSON.parse(selectedScan.aiCorrelationData) } catch { /* skip */ }
-  try { if (selectedScan.aiComplianceData) complianceData = JSON.parse(selectedScan.aiComplianceData) } catch { /* skip */ }
+  try { if (selectedScan?.aiCorrelationData) correlationData = JSON.parse(selectedScan.aiCorrelationData) } catch { /* skip */ }
+  try { if (selectedScan?.aiComplianceData) complianceData = JSON.parse(selectedScan.aiComplianceData) } catch { /* skip */ }
 
-  const scanFindings = findings.filter(f => f.scanId === selectedScan.id).sort((a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5))
+  const scanFindings = selectedScan
+    ? findings.filter(f => f.scanId === selectedScan.id).sort((a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5))
+    : []
 
   return (
     <div className="tac-grid" style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
@@ -629,7 +632,16 @@ export default function DastPage() {
           </div>
         )}
 
+        {/* ── Empty State ── */}
+        {scans.length === 0 && !isScanning && (
+          <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--color-text-dim)' }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 8 }}>No scans yet</div>
+            <div className="mono" style={{ fontSize: 11 }}>Click &quot;+ NEW SCAN&quot; to run your first DAST scan.</div>
+          </div>
+        )}
+
         {/* ── Scan Selector ── */}
+        {scans.length > 0 && (
         <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
           {scans.map(s => (
             <div
@@ -637,15 +649,15 @@ export default function DastPage() {
               onClick={() => { setSelectedScan(s); setSelectedFinding(null); setSeverityFilter('ALL'); setActiveTab('findings') }}
               style={{
                 flex: 1,
-                background: selectedScan.id === s.id ? 'var(--color-dast-dim)' : 'var(--color-bg-surface)',
-                border: `1px solid ${selectedScan.id === s.id ? 'var(--color-dast)' : 'var(--color-border)'}`,
+                background: selectedScan?.id === s.id ? 'var(--color-dast-dim)' : 'var(--color-bg-surface)',
+                border: `1px solid ${selectedScan?.id === s.id ? 'var(--color-dast)' : 'var(--color-border)'}`,
                 padding: '12px 14px',
                 cursor: 'pointer',
                 transition: 'all 0.12s',
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span className="mono" style={{ fontSize: 11, fontWeight: 600, color: selectedScan.id === s.id ? 'var(--color-dast)' : 'var(--color-text-secondary)', letterSpacing: '0.08em' }}>
+                <span className="mono" style={{ fontSize: 11, fontWeight: 600, color: selectedScan?.id === s.id ? 'var(--color-dast)' : 'var(--color-text-secondary)', letterSpacing: '0.08em' }}>
                   {s.name}
                 </span>
                 <span className={`label-tag sev-${s.criticalCount > 0 ? 'critical' : s.highCount > 0 ? 'high' : 'medium'}`}>
@@ -668,8 +680,10 @@ export default function DastPage() {
             </div>
           ))}
         </div>
+        )}
 
         {/* ── Score Cards ── */}
+        {selectedScan && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10, marginBottom: 20 }}>
           <div className="bracket-card bracket-dast" style={{ padding: '12px 14px', textAlign: 'center' }}>
             <div className="mono" style={{ fontSize: 24, fontWeight: 700, color: riskColor(selectedScan.riskScore) }}>{selectedScan.riskScore}</div>
@@ -688,8 +702,11 @@ export default function DastPage() {
             </div>
           ))}
         </div>
+        )}
 
         {/* ── Tab Navigation ── */}
+        {selectedScan && (
+        <>
         <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: '1px solid var(--color-border)' }}>
           {([
             { id: 'findings' as TabId, label: 'FINDINGS', count: totalForScan },
@@ -858,6 +875,8 @@ export default function DastPage() {
             schedFrequency={schedFrequency}
             setSchedFrequency={setSchedFrequency}
           />
+        )}
+        </>
         )}
       </div>
 

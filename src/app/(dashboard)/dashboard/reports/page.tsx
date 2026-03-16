@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import type { DastScan } from '@/lib/types'
-import { MOCK_DAST_SCANS } from '@/lib/mock-data/dast'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -18,26 +17,19 @@ interface ReportHistoryEntry {
   fileSize: string
 }
 
-// ─── Mock Report History ────────────────────────────────────────────────────
-
-const MOCK_REPORT_HISTORY: ReportHistoryEntry[] = [
-  { id: 'rpt-001', scanId: 'dast-scan-001', scanName: 'Production Web App', format: 'pdf', generatedAt: '2026-03-12T10:15:00Z', fileSize: '1.2 MB' },
-  { id: 'rpt-002', scanId: 'dast-scan-001', scanName: 'Production Web App', format: 'json', generatedAt: '2026-03-12T10:16:00Z', fileSize: '340 KB' },
-  { id: 'rpt-003', scanId: 'dast-scan-002', scanName: 'Staging API', format: 'csv', generatedAt: '2026-03-11T15:20:00Z', fileSize: '28 KB' },
-  { id: 'rpt-004', scanId: 'dast-scan-003', scanName: 'Deep Scan — Payment Portal', format: 'pdf', generatedAt: '2026-03-14T05:30:00Z', fileSize: '2.4 MB' },
-  { id: 'rpt-005', scanId: 'dast-scan-003', scanName: 'Deep Scan — Payment Portal', format: 'json', generatedAt: '2026-03-14T05:31:00Z', fileSize: '890 KB' },
-]
-
 // ─── Page ───────────────────────────────────────────────────────────────────
 
 export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState<ReportTab>('generate')
-  const [scans, setScans] = useState<DastScan[]>(MOCK_DAST_SCANS)
+  const [scans, setScans] = useState<DastScan[]>([])
   const [selectedScanId, setSelectedScanId] = useState<string>('')
   const [selectedFormat, setSelectedFormat] = useState<ReportFormat>('pdf')
   const [generating, setGenerating] = useState(false)
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null)
-  const [reportHistory] = useState<ReportHistoryEntry[]>(MOCK_REPORT_HISTORY)
+  const [reportError, setReportError] = useState<string | null>(null)
+  const [reportGenerated, setReportGenerated] = useState(false)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [reportHistory, setReportHistory] = useState<ReportHistoryEntry[]>([])
 
   // Comparison state
   const [compBaseId, setCompBaseId] = useState<string>('')
@@ -53,7 +45,7 @@ export default function ReportsPage() {
         const data = await res.json()
         if (data.scans?.length > 0) setScans(data.scans)
       }
-    } catch { /* fallback to mock */ }
+    } catch { /* API unavailable */ }
   }, [])
 
   useEffect(() => { fetchScans() }, [fetchScans])
@@ -64,18 +56,30 @@ export default function ReportsPage() {
     if (!selectedScanId) return
     setGenerating(true)
     setDownloadUrl(null)
+    setReportError(null)
+    setReportGenerated(false)
     try {
       const res = await fetch(`/api/dast/reports/${selectedScanId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ format: selectedFormat }),
       })
-      if (res.ok) {
+      if (!res.ok) {
+        let errorMsg = `Report generation failed (${res.status})`
+        try {
+          const errData = await res.json()
+          if (errData.error) errorMsg = errData.error
+        } catch { /* response was not JSON, use default message */ }
+        setReportError(errorMsg)
+      } else {
         const blob = await res.blob()
         const url = URL.createObjectURL(blob)
         setDownloadUrl(url)
+        setReportGenerated(true)
       }
-    } catch { /* fallback */ }
+    } catch {
+      setReportError('Network error: could not reach the report API.')
+    }
     setGenerating(false)
   }
 
@@ -247,6 +251,30 @@ export default function ReportsPage() {
                 </a>
               )}
             </div>
+
+            {reportError && (
+              <div className="mono" style={{
+                marginTop: 12, padding: '10px 14px',
+                background: 'rgba(255, 77, 106, 0.1)',
+                border: '1px solid var(--color-critical)',
+                color: 'var(--color-critical)',
+                fontSize: 11, fontWeight: 500,
+              }}>
+                {reportError}
+              </div>
+            )}
+
+            {reportGenerated && !reportError && (
+              <div className="mono" style={{
+                marginTop: 12, padding: '10px 14px',
+                background: 'rgba(78, 205, 196, 0.1)',
+                border: '1px solid var(--color-scanner)',
+                color: 'var(--color-scanner)',
+                fontSize: 11, fontWeight: 500,
+              }}>
+                Report generated successfully. Click DOWNLOAD to save the file.
+              </div>
+            )}
           </div>
 
           {/* Report Content Preview */}
@@ -281,6 +309,12 @@ export default function ReportsPage() {
       {/* ── Report History Tab ── */}
       {activeTab === 'history' && (
         <div style={{ maxWidth: 900 }}>
+          {reportHistory.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--color-text-dim)' }}>
+              <div style={{ fontSize: 14, marginBottom: 8 }}>No reports generated yet</div>
+              <div className="mono" style={{ fontSize: 11 }}>Generate a report from the Generate Report tab to see it here.</div>
+            </div>
+          ) : (
           <div style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
             <div className="mono" style={{
               display: 'grid', gridTemplateColumns: '1fr 120px 70px 180px 80px',
@@ -323,6 +357,7 @@ export default function ReportsPage() {
               </div>
             ))}
           </div>
+          )}
         </div>
       )}
 

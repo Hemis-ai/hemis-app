@@ -34,6 +34,8 @@
   --color-blueteam-dim:   #001a38;
   --color-sast:           #a78bfa;
   --color-sast-dim:       #1a0e38;
+  --color-dast:           #b06aff;
+  --color-dast-dim:       #1e0a38;
   --color-critical:       #ef5a5a;
   --color-high:           #ec8450;
   --color-medium:         #f2d156;
@@ -70,6 +72,8 @@
   --color-blueteam-dim:   #001a38;
   --color-sast:           #a78bfa;
   --color-sast-dim:       #1a0e38;
+  --color-dast:           #b06aff;
+  --color-dast-dim:       #1e0a38;
   --color-critical:       #ef5a5a;
   --color-high:           #ec8450;
   --color-medium:         #f2d156;
@@ -125,6 +129,8 @@ body {
 .bracket-scanner::before, .bracket-scanner::after { border-color: var(--color-scanner); }
 .bracket-hemis::before,   .bracket-hemis::after   { border-color: var(--color-hemis); }
 .bracket-blueteam::before,.bracket-blueteam::after { border-color: var(--color-blueteam); }
+.bracket-sast::before,    .bracket-sast::after     { border-color: var(--color-sast); }
+.bracket-dast::before,    .bracket-dast::after     { border-color: var(--color-dast); }
 
 /* ── Pulsing status dot ── */
 .dot-live { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--color-scanner); box-shadow:0 0 5px rgba(0,184,112,0.6); animation:pulse-dot 2.4s ease-in-out infinite; }
@@ -137,7 +143,8 @@ body {
 @keyframes scan-sweep { 0%{top:0;opacity:.7} 100%{top:100%;opacity:0} }
 .scan-line { position:absolute; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--color-scanner),transparent); animation:scan-sweep 2.2s linear infinite; pointer-events:none; }
 .scan-line.red  { background:linear-gradient(90deg,transparent,var(--color-hemis),transparent); }
-.scan-line.blue { background:linear-gradient(90deg,transparent,var(--color-blueteam),transparent); }
+.scan-line.blue   { background:linear-gradient(90deg,transparent,var(--color-blueteam),transparent); }
+.scan-line.purple { background:linear-gradient(90deg,transparent,var(--color-dast),transparent); }
 
 /* ── Terminal ── */
 .terminal { background:#060c14; border:1px solid var(--color-border); font-family:var(--font-mono); font-size:12px; color:#a8bcd4; overflow-y:auto; }
@@ -235,6 +242,10 @@ body {
   --color-high:           #b84000;
   --color-medium:         #a87800;
   --color-low:            #5a7a90;
+  --color-sast:           #7c5cbf;
+  --color-sast-dim:       #ede0ff;
+  --color-dast:           #8a3fdb;
+  --color-dast-dim:       #ede0ff;
 }
 
 /* Grid dots flip to dark on light bg */
