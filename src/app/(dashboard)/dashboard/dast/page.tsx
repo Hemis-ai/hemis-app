@@ -18,7 +18,7 @@ const PHASE_LABELS: Record<string, string> = {
   failed: 'Failed',
 }
 
-type TabId = 'findings' | 'executive' | 'attack-chains' | 'compliance' | 'comparison' | 'schedules'
+type TopTab = 'scanner' | 'history' | 'attack-chains' | 'compliance' | 'compare' | 'report'
 type AuthType = 'none' | 'bearer' | 'apikey' | 'oauth2' | 'cookie' | 'header' | 'form'
 
 // ─── Markdown Renderer ──────────────────────────────────────────────────────
@@ -72,13 +72,14 @@ function renderMarkdown(md: string) {
 // ─── Page ───────────────────────────────────────────────────────────────────
 
 export default function DastPage() {
+  const [activeTab, setActiveTab] = useState<TopTab>('scanner')
   const [scans, setScans] = useState<DastScan[]>([])
   const [selectedScan, setSelectedScan] = useState<DastScan | null>(null)
   const [findings, setFindings] = useState<DastFinding[]>([])
   const [severityFilter, setSeverityFilter] = useState<Severity | 'ALL'>('ALL')
   const [selectedFinding, setSelectedFinding] = useState<DastFinding | null>(null)
-  const [activeTab, setActiveTab] = useState<TabId>('findings')
-  const [showNewScan, setShowNewScan] = useState(false)
+
+  // ── Scan form state ──
   const [newScanName, setNewScanName] = useState('')
   const [newScanUrl, setNewScanUrl] = useState('')
   const [newScanProfile, setNewScanProfile] = useState<'full' | 'quick' | 'api_only' | 'deep'>('full')
@@ -111,21 +112,18 @@ export default function DastPage() {
   const [compResult, setCompResult] = useState<any>(null)
   const [compLoading, setCompLoading] = useState(false)
 
-  // ── Schedules state ──
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [schedules, setSchedules] = useState<any[]>([])
-  const [schedulesLoaded, setSchedulesLoaded] = useState(false)
-  const [showNewSchedule, setShowNewSchedule] = useState(false)
-  const [schedName, setSchedName] = useState('')
-  const [schedUrl, setSchedUrl] = useState('')
-  const [schedProfile, setSchedProfile] = useState('full')
-  const [schedFrequency, setSchedFrequency] = useState('weekly')
-
   // ── Scan progress state ──
   const [isScanning, setIsScanning] = useState(false)
   const [scanProgress, setScanProgress] = useState<DastScanProgress | null>(null)
   const progressRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // ── Report state ──
+  const [reportScanId, setReportScanId] = useState<string>('')
+  const [reportFormat, setReportFormat] = useState<'pdf' | 'json' | 'csv'>('pdf')
+  const [reportGenerating, setReportGenerating] = useState(false)
+  const [reportSuccess, setReportSuccess] = useState<string | null>(null)
+  const [reportError, setReportError] = useState<string | null>(null)
 
   // ── Build auth config from form state ──
   function buildAuthConfig() {
@@ -146,10 +144,7 @@ export default function DastPage() {
       const res = await fetch('/api/dast/scans')
       if (res.ok) {
         const data = await res.json()
-        if (data.scans?.length > 0) {
-          setScans(data.scans)
-          setSelectedScan(prev => prev ?? data.scans[0])
-        }
+        setScans(data.scans ?? [])
       }
     } catch { /* API unavailable */ }
   }, [])
@@ -160,12 +155,10 @@ export default function DastPage() {
       const res = await fetch(`/api/dast/findings?scanId=${scanId}`)
       if (res.ok) {
         const data = await res.json()
-        if (data.findings?.length > 0) {
-          setFindings((prev) => {
-            const otherFindings = prev.filter((f) => f.scanId !== scanId)
-            return [...otherFindings, ...data.findings]
-          })
-        }
+        setFindings((prev) => {
+          const otherFindings = prev.filter((f) => f.scanId !== scanId)
+          return [...otherFindings, ...(data.findings ?? [])]
+        })
       }
     } catch { /* API unavailable */ }
   }, [])
@@ -188,18 +181,6 @@ export default function DastPage() {
     } catch { /* ignore */ }
     setCompLoading(false)
   }, [compBaselineId, compCurrentId])
-
-  // ── Fetch schedules ──
-  const fetchSchedules = useCallback(async () => {
-    try {
-      const res = await fetch('/api/dast/schedules')
-      if (res.ok) {
-        const data = await res.json()
-        setSchedules(data.schedules ?? [])
-        setSchedulesLoaded(true)
-      }
-    } catch { /* ignore */ }
-  }, [])
 
   useEffect(() => {
     fetchScans()
@@ -239,7 +220,6 @@ export default function DastPage() {
         const data = await res.json()
         const newScan = data.scan
         setIsScanning(true)
-        setShowNewScan(false)
         // Poll for progress
         pollRef.current = setInterval(async () => {
           try {
@@ -267,7 +247,6 @@ export default function DastPage() {
   // ── Simulated scan (fallback when API unavailable) ──
   function startMockScan() {
     setIsScanning(true)
-    setShowNewScan(false)
     const phases = [
       { p: 5, phase: 'initializing', msg: 'Creating scan session...' },
       { p: 15, phase: 'crawling', msg: 'Spidering target...' },
@@ -304,9 +283,56 @@ export default function DastPage() {
       } else {
         clearInterval(progressRef.current!)
         progressRef.current = null
-        setTimeout(() => { setIsScanning(false); setScanProgress(null) }, 2000)
+        setTimeout(() => { setIsScanning(false); setScanProgress(null); fetchScans() }, 2000)
       }
     }, 1200)
+  }
+
+  // ── Generate report ──
+  async function handleGenerateReport() {
+    if (!reportScanId) return
+    setReportGenerating(true)
+    setReportSuccess(null)
+    setReportError(null)
+    try {
+      const res = await fetch(`/api/dast/reports/${reportScanId}?format=${reportFormat}`)
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null)
+        throw new Error(errData?.error || `Report generation failed (${res.status})`)
+      }
+
+      if (reportFormat === 'pdf') {
+        // HTML response - open in new tab for Ctrl+P
+        const html = await res.text()
+        const blob = new Blob([html], { type: 'text/html' })
+        const url = URL.createObjectURL(blob)
+        window.open(url, '_blank')
+        setReportSuccess('Report opened in new tab. Use Ctrl+P / Cmd+P to save as PDF.')
+      } else if (reportFormat === 'json') {
+        const data = await res.json()
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `dast-report-${reportScanId}.json`
+        a.click()
+        URL.revokeObjectURL(url)
+        setReportSuccess('JSON report downloaded.')
+      } else if (reportFormat === 'csv') {
+        const text = await res.text()
+        const blob = new Blob([text], { type: 'text/csv' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `dast-report-${reportScanId}.csv`
+        a.click()
+        URL.revokeObjectURL(url)
+        setReportSuccess('CSV report downloaded.')
+      }
+    } catch (err) {
+      setReportError(err instanceof Error ? err.message : 'Report generation failed')
+    }
+    setReportGenerating(false)
   }
 
   // ── Parse AI data from selected scan ──
@@ -320,532 +346,564 @@ export default function DastPage() {
     ? findings.filter(f => f.scanId === selectedScan.id).sort((a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5))
     : []
 
-  return (
-    <div className="tac-grid" style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
-      {/* ═══ Left: Main Content ═══ */}
-      <div style={{ flex: 1, padding: '24px 28px', overflowY: 'auto' }}>
+  const completedScans = scans.filter(s => s.status === 'COMPLETED')
 
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-          <div>
-            <div className="display" style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-              DAST Scanner
-            </div>
-            <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)', letterSpacing: '0.08em', marginTop: 2 }}>
-              Dynamic Application Security Testing &nbsp;·&nbsp; OWASP ZAP Engine
-            </div>
-          </div>
+  const reportScan = completedScans.find(s => s.id === reportScanId) ?? null
+
+  return (
+    <div style={{ padding: '24px 28px', height: '100%', overflowY: 'auto' }}>
+
+      {/* ── Page Header ── */}
+      <div style={{ marginBottom: 20 }}>
+        <div className="display" style={{ fontSize: 26, fontWeight: 700, color: 'var(--color-text-primary)', margin: 0, marginBottom: 6 }}>
+          DAST Scanner
+        </div>
+        <p style={{ fontSize: 14, color: 'var(--color-text-secondary)', margin: 0 }}>
+          Dynamic Application Security Testing &nbsp;&middot;&nbsp; OWASP ZAP Engine &nbsp;&middot;&nbsp; AI-Enriched Analysis
+        </p>
+      </div>
+
+      {/* ── Top Tab Bar ── */}
+      <div style={{ display: 'flex', gap: 0, marginBottom: 0, borderBottom: '1px solid var(--color-border)' }}>
+        {([
+          { id: 'scanner' as TopTab, label: 'SCANNER' },
+          { id: 'history' as TopTab, label: 'HISTORY' },
+          { id: 'attack-chains' as TopTab, label: 'ATTACK CHAINS' },
+          { id: 'compliance' as TopTab, label: 'COMPLIANCE' },
+          { id: 'compare' as TopTab, label: 'COMPARE' },
+          { id: 'report' as TopTab, label: 'REPORT' },
+        ]).map(p => (
           <button
-            onClick={() => setShowNewScan(true)}
-            disabled={isScanning}
+            key={p.id}
+            onClick={() => setActiveTab(p.id)}
+            className="mono"
             style={{
-              background: 'var(--color-dast)',
-              color: '#fff',
-              border: 'none',
-              padding: '8px 20px',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              cursor: isScanning ? 'not-allowed' : 'pointer',
-              opacity: isScanning ? 0.5 : 1,
+              padding: '10px 20px', fontSize: 11, letterSpacing: '0.12em',
+              textTransform: 'uppercase', cursor: 'pointer',
+              background: 'none', border: 'none',
+              borderBottom: activeTab === p.id ? '2px solid var(--color-dast)' : '2px solid transparent',
+              color: activeTab === p.id ? 'var(--color-dast)' : 'var(--color-text-secondary)',
+              marginBottom: -1,
             }}
           >
-            + NEW SCAN
+            {p.label}
           </button>
-        </div>
+        ))}
+      </div>
 
-        {/* ── New Scan Form ── */}
-        {showNewScan && (
-          <div className="bracket-card bracket-dast" style={{ padding: 20, marginBottom: 20 }}>
-            <div className="mono" style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-dast)', letterSpacing: '0.1em', marginBottom: 14 }}>
-              NEW SCAN CONFIGURATION
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-              <div>
-                <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>TARGET URL</label>
-                <input className="tac-input" placeholder="https://example.com" style={{ marginTop: 4 }} value={newScanUrl} onChange={e => setNewScanUrl(e.target.value)} />
-              </div>
-              <div>
-                <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>SCAN NAME</label>
-                <input className="tac-input" placeholder="My Web App Scan" style={{ marginTop: 4 }} value={newScanName} onChange={e => setNewScanName(e.target.value)} />
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
-              {(['full', 'quick', 'api_only', 'deep'] as const).map(profile => (
-                <div
-                  key={profile}
-                  onClick={() => setNewScanProfile(profile)}
-                  style={{
-                    background: newScanProfile === profile ? 'var(--color-dast-dim)' : 'var(--color-bg-elevated)',
-                    border: `1px solid ${newScanProfile === profile ? 'var(--color-dast)' : 'var(--color-border)'}`,
-                    padding: '10px 14px',
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                  }}
-                >
-                  <div className="mono" style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-primary)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                    {profile.replace('_', ' ')}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 2 }}>
-                    {profile === 'full' ? 'Spider + Active Scan' : profile === 'quick' ? 'Top 10 checks' : profile === 'api_only' ? 'API endpoints only' : 'All checks, max intensity'}
-                  </div>
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── SCANNER TAB ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'scanner' && (
+        <div style={{ marginTop: 20 }}>
+
+          {/* Live Scan Progress */}
+          {isScanning && scanProgress && (
+            <div className="bracket-card bracket-dast" style={{ padding: 20, marginBottom: 20, position: 'relative', overflow: 'hidden' }}>
+              {scanProgress.status === 'RUNNING' && <div className="scan-line purple" />}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div className="mono" style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-dast)', letterSpacing: '0.1em' }}>
+                  SCAN IN PROGRESS
                 </div>
-              ))}
-            </div>
-
-            {/* ── Advanced Configuration Toggle ── */}
-            <div
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className="mono"
-              style={{
-                fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--color-dast)',
-                cursor: 'pointer', marginBottom: showAdvanced ? 14 : 0, userSelect: 'none',
-              }}
-            >
-              {showAdvanced ? '▾' : '▸'} ADVANCED CONFIGURATION
-            </div>
-
-            {showAdvanced && (
-              <div style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border)', padding: 16, marginBottom: 16 }}>
-                {/* Auth Type Selector */}
-                <div className="mono" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--color-text-dim)', marginBottom: 8 }}>
-                  AUTHENTICATION
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-                  {(['none', 'bearer', 'apikey', 'oauth2', 'cookie', 'header', 'form'] as const).map(at => (
-                    <button
-                      key={at}
-                      onClick={() => setAuthType(at)}
-                      className="mono"
-                      style={{
-                        background: authType === at ? 'var(--color-dast-dim)' : 'transparent',
-                        border: `1px solid ${authType === at ? 'var(--color-dast)' : 'var(--color-border)'}`,
-                        color: authType === at ? 'var(--color-dast)' : 'var(--color-text-dim)',
-                        padding: '4px 10px', fontSize: 10, fontWeight: 600, letterSpacing: '0.08em',
-                        cursor: 'pointer', textTransform: 'uppercase',
-                      }}
-                    >
-                      {at}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Auth-specific fields */}
-                {authType === 'bearer' && (
-                  <div style={{ marginBottom: 14 }}>
-                    <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>BEARER TOKEN</label>
-                    <input className="tac-input" placeholder="eyJhbGciOiJIUzI1NiIs..." style={{ marginTop: 4 }} value={authBearerToken} onChange={e => setAuthBearerToken(e.target.value)} />
-                  </div>
-                )}
-                {authType === 'apikey' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-                    <div>
-                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>API KEY</label>
-                      <input className="tac-input" placeholder="sk-..." style={{ marginTop: 4 }} value={authApiKey} onChange={e => setAuthApiKey(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>HEADER NAME</label>
-                      <input className="tac-input" placeholder="X-API-Key" style={{ marginTop: 4 }} value={authApiKeyHeader} onChange={e => setAuthApiKeyHeader(e.target.value)} />
-                    </div>
-                  </div>
-                )}
-                {authType === 'oauth2' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-                    <div>
-                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>TOKEN URL</label>
-                      <input className="tac-input" placeholder="https://auth.example.com/token" style={{ marginTop: 4 }} value={authOauth2TokenUrl} onChange={e => setAuthOauth2TokenUrl(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>CLIENT ID</label>
-                      <input className="tac-input" placeholder="client_id" style={{ marginTop: 4 }} value={authOauth2ClientId} onChange={e => setAuthOauth2ClientId(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>CLIENT SECRET</label>
-                      <input className="tac-input" type="password" placeholder="client_secret" style={{ marginTop: 4 }} value={authOauth2ClientSecret} onChange={e => setAuthOauth2ClientSecret(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>SCOPE (optional)</label>
-                      <input className="tac-input" placeholder="read write" style={{ marginTop: 4 }} value={authOauth2Scope} onChange={e => setAuthOauth2Scope(e.target.value)} />
-                    </div>
-                  </div>
-                )}
-                {authType === 'cookie' && (
-                  <div style={{ marginBottom: 14 }}>
-                    <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>COOKIE VALUE</label>
-                    <input className="tac-input" placeholder="session=abc123; token=xyz" style={{ marginTop: 4 }} value={authCookieValue} onChange={e => setAuthCookieValue(e.target.value)} />
-                  </div>
-                )}
-                {authType === 'header' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-                    <div>
-                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>HEADER NAME</label>
-                      <input className="tac-input" placeholder="X-Custom-Auth" style={{ marginTop: 4 }} value={authHeaderName} onChange={e => setAuthHeaderName(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>HEADER VALUE</label>
-                      <input className="tac-input" placeholder="custom-token-value" style={{ marginTop: 4 }} value={authHeaderValue} onChange={e => setAuthHeaderValue(e.target.value)} />
-                    </div>
-                  </div>
-                )}
-                {authType === 'form' && (
-                  <div style={{ marginBottom: 14 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
-                      <div>
-                        <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>LOGIN URL</label>
-                        <input className="tac-input" placeholder="https://example.com/login" style={{ marginTop: 4 }} value={authFormLoginUrl} onChange={e => setAuthFormLoginUrl(e.target.value)} />
-                      </div>
-                      <div>
-                        <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>USERNAME</label>
-                        <input className="tac-input" placeholder="testuser" style={{ marginTop: 4 }} value={authFormUsername} onChange={e => setAuthFormUsername(e.target.value)} />
-                      </div>
-                      <div>
-                        <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>PASSWORD</label>
-                        <input className="tac-input" type="password" placeholder="password" style={{ marginTop: 4 }} value={authFormPassword} onChange={e => setAuthFormPassword(e.target.value)} />
-                      </div>
-                      <div>
-                        <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>USERNAME FIELD NAME</label>
-                        <input className="tac-input" placeholder="username" style={{ marginTop: 4 }} value={authFormUsernameField} onChange={e => setAuthFormUsernameField(e.target.value)} />
-                      </div>
-                      <div>
-                        <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>PASSWORD FIELD NAME</label>
-                        <input className="tac-input" placeholder="password" style={{ marginTop: 4 }} value={authFormPasswordField} onChange={e => setAuthFormPasswordField(e.target.value)} />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Scope Configuration */}
-                <div className="mono" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--color-text-dim)', marginBottom: 8, marginTop: 10 }}>
-                  SCOPE CONFIGURATION
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div>
-                    <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>INCLUDE PATHS (one per line)</label>
-                    <textarea
-                      className="tac-input"
-                      placeholder={'/api/*\n/app/*\n/admin/*'}
-                      rows={3}
-                      style={{ marginTop: 4, resize: 'vertical', fontFamily: 'var(--font-mono)', fontSize: 11 }}
-                      value={scopeInclude}
-                      onChange={e => setScopeInclude(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>EXCLUDE PATHS (one per line)</label>
-                    <textarea
-                      className="tac-input"
-                      placeholder={'/logout\n/static/*\n*.pdf'}
-                      rows={3}
-                      style={{ marginTop: 4, resize: 'vertical', fontFamily: 'var(--font-mono)', fontSize: 11 }}
-                      value={scopeExclude}
-                      onChange={e => setScopeExclude(e.target.value)}
-                    />
-                  </div>
-                </div>
+                <span className="mono" style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-dast)' }}>
+                  {scanProgress.progress}%
+                </span>
               </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 10, marginTop: showAdvanced ? 0 : 16 }}>
-              <button
-                onClick={() => {
-                  const name = newScanName.trim() || 'DAST Scan'
-                  const url = newScanUrl.trim()
-                  if (!url) return
-                  startRealScan(name, url, newScanProfile)
-                  setNewScanName(''); setNewScanUrl(''); setNewScanProfile('full')
-                  setAuthType('none'); setShowAdvanced(false)
-                }}
-                disabled={!newScanUrl.trim()}
-                style={{
-                  background: 'var(--color-dast)',
-                  color: '#fff',
-                  border: 'none',
-                  padding: '8px 24px',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  letterSpacing: '0.12em',
-                  textTransform: 'uppercase',
-                  cursor: !newScanUrl.trim() ? 'not-allowed' : 'pointer',
-                  opacity: !newScanUrl.trim() ? 0.5 : 1,
-                }}
-              >
-                START SCAN
-              </button>
-              <button
-                onClick={() => { setShowNewScan(false); setShowAdvanced(false) }}
-                style={{
-                  background: 'transparent',
-                  color: 'var(--color-text-dim)',
-                  border: '1px solid var(--color-border)',
-                  padding: '8px 18px',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 11,
-                  letterSpacing: '0.1em',
-                  cursor: 'pointer',
-                }}
-              >
-                CANCEL
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ── Live Scan Progress ── */}
-        {isScanning && scanProgress && (
-          <div className="bracket-card bracket-dast" style={{ padding: 20, marginBottom: 20, position: 'relative', overflow: 'hidden' }}>
-            {scanProgress.status === 'RUNNING' && <div className="scan-line purple" />}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div className="mono" style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-dast)', letterSpacing: '0.1em' }}>
-                SCAN IN PROGRESS
+              <div className="tac-progress" style={{ marginBottom: 12 }}>
+                <div className="tac-progress-fill" style={{ width: `${scanProgress.progress}%`, background: 'var(--color-dast)' }} />
               </div>
-              <span className="mono" style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-dast)' }}>
-                {scanProgress.progress}%
-              </span>
-            </div>
-            <div className="tac-progress" style={{ marginBottom: 12 }}>
-              <div className="tac-progress-fill" style={{ width: `${scanProgress.progress}%`, background: 'var(--color-dast)' }} />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
-                {PHASE_LABELS[scanProgress.currentPhase] ?? scanProgress.currentPhase}
-              </div>
-              <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)' }}>
-                {scanProgress.message}
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginTop: 14 }}>
-              {[
-                { label: 'Endpoints', value: scanProgress.endpointsDiscovered },
-                { label: 'Tested', value: scanProgress.endpointsTested },
-                { label: 'Payloads', value: scanProgress.payloadsSent },
-                { label: 'Findings', value: scanProgress.findingsCount },
-              ].map(m => (
-                <div key={m.label} style={{ background: 'var(--color-bg-elevated)', padding: '8px 10px', textAlign: 'center' }}>
-                  <div className="mono" style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-dast)' }}>{m.value}</div>
-                  <div style={{ fontSize: 10, color: 'var(--color-text-dim)' }}>{m.label}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── Empty State ── */}
-        {scans.length === 0 && !isScanning && (
-          <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--color-text-dim)' }}>
-            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 8 }}>No scans yet</div>
-            <div className="mono" style={{ fontSize: 11 }}>Click &quot;+ NEW SCAN&quot; to run your first DAST scan.</div>
-          </div>
-        )}
-
-        {/* ── Scan Selector ── */}
-        {scans.length > 0 && (
-        <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-          {scans.map(s => (
-            <div
-              key={s.id}
-              onClick={() => { setSelectedScan(s); setSelectedFinding(null); setSeverityFilter('ALL'); setActiveTab('findings') }}
-              style={{
-                flex: 1,
-                background: selectedScan?.id === s.id ? 'var(--color-dast-dim)' : 'var(--color-bg-surface)',
-                border: `1px solid ${selectedScan?.id === s.id ? 'var(--color-dast)' : 'var(--color-border)'}`,
-                padding: '12px 14px',
-                cursor: 'pointer',
-                transition: 'all 0.12s',
-              }}
-            >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span className="mono" style={{ fontSize: 11, fontWeight: 600, color: selectedScan?.id === s.id ? 'var(--color-dast)' : 'var(--color-text-secondary)', letterSpacing: '0.08em' }}>
-                  {s.name}
-                </span>
-                <span className={`label-tag sev-${s.criticalCount > 0 ? 'critical' : s.highCount > 0 ? 'high' : 'medium'}`}>
-                  {s.status}
-                </span>
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 4 }}>{s.targetUrl}</div>
-              {s.techStackDetected && s.techStackDetected.length > 0 && (
-                <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
-                  {s.techStackDetected.slice(0, 4).map(tech => (
-                    <span key={tech} className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)', background: 'var(--color-bg-elevated)', padding: '1px 6px', letterSpacing: '0.05em' }}>
-                      {tech}
-                    </span>
-                  ))}
-                  {s.techStackDetected.length > 4 && (
-                    <span className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)' }}>+{s.techStackDetected.length - 4}</span>
-                  )}
+                <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
+                  {PHASE_LABELS[scanProgress.currentPhase] ?? scanProgress.currentPhase}
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
-        )}
-
-        {/* ── Score Cards ── */}
-        {selectedScan && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10, marginBottom: 20 }}>
-          <div className="bracket-card bracket-dast" style={{ padding: '12px 14px', textAlign: 'center' }}>
-            <div className="mono" style={{ fontSize: 24, fontWeight: 700, color: riskColor(selectedScan.riskScore) }}>{selectedScan.riskScore}</div>
-            <div style={{ fontSize: 10, color: 'var(--color-text-dim)' }}>Risk Score</div>
-          </div>
-          {([
-            { label: 'CRITICAL', count: selectedScan.criticalCount, sev: 'critical' },
-            { label: 'HIGH', count: selectedScan.highCount, sev: 'high' },
-            { label: 'MEDIUM', count: selectedScan.mediumCount, sev: 'medium' },
-            { label: 'LOW', count: selectedScan.lowCount, sev: 'low' },
-            { label: 'INFO', count: selectedScan.infoCount, sev: 'info' },
-          ] as const).map(c => (
-            <div key={c.label} style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', padding: '12px 14px', textAlign: 'center' }}>
-              <div className="mono" style={{ fontSize: 22, fontWeight: 700, color: `var(--color-${c.sev === 'info' ? 'blueteam' : c.sev})` }}>{c.count}</div>
-              <div className={`label-tag sev-${c.sev}`} style={{ fontSize: 9 }}>{c.label}</div>
-            </div>
-          ))}
-        </div>
-        )}
-
-        {/* ── Tab Navigation ── */}
-        {selectedScan && (
-        <>
-        <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: '1px solid var(--color-border)' }}>
-          {([
-            { id: 'findings' as TabId, label: 'FINDINGS', count: totalForScan },
-            { id: 'executive' as TabId, label: 'EXECUTIVE SUMMARY', count: null },
-            { id: 'attack-chains' as TabId, label: 'ATTACK CHAINS', count: correlationData?.attackChains?.length ?? null },
-            { id: 'compliance' as TabId, label: 'COMPLIANCE', count: complianceData?.frameworks?.length ?? null },
-            { id: 'comparison' as TabId, label: 'COMPARE', count: null },
-            { id: 'schedules' as TabId, label: 'SCHEDULES', count: null },
-          ]).map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => { setActiveTab(tab.id); setSelectedFinding(null) }}
-              className="mono"
-              style={{
-                background: 'transparent',
-                border: 'none',
-                borderBottom: activeTab === tab.id ? '2px solid var(--color-dast)' : '2px solid transparent',
-                color: activeTab === tab.id ? 'var(--color-dast)' : 'var(--color-text-dim)',
-                padding: '8px 16px',
-                fontSize: 10,
-                fontWeight: 600,
-                letterSpacing: '0.1em',
-                cursor: 'pointer',
-                transition: 'all 0.12s',
-              }}
-            >
-              {tab.label}{tab.count !== null ? ` (${tab.count})` : ''}
-            </button>
-          ))}
-        </div>
-
-        {/* ── Tab Content ── */}
-
-        {/* Findings Tab */}
-        {activeTab === 'findings' && (
-          <>
-            {/* Severity Filter */}
-            <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
-              {(['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'] as const).map(sev => (
-                <button
-                  key={sev}
-                  onClick={() => setSeverityFilter(sev)}
-                  className="mono"
-                  style={{
-                    background: severityFilter === sev ? 'var(--color-bg-elevated)' : 'transparent',
-                    border: `1px solid ${severityFilter === sev ? 'var(--color-border-bright)' : 'var(--color-border)'}`,
-                    color: severityFilter === sev ? 'var(--color-text-primary)' : 'var(--color-text-dim)',
-                    padding: '4px 12px',
-                    fontSize: 10,
-                    fontWeight: 600,
-                    letterSpacing: '0.1em',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {sev} {sev === 'ALL' ? `(${totalForScan})` : ''}
-                </button>
-              ))}
-            </div>
-
-            {/* Findings Table */}
-            <div style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
-              <div className="mono" style={{
-                display: 'grid',
-                gridTemplateColumns: '80px 1fr 100px 80px 60px',
-                padding: '8px 14px',
-                borderBottom: '1px solid var(--color-border)',
-                fontSize: 10,
-                fontWeight: 600,
-                letterSpacing: '0.1em',
-                color: 'var(--color-text-dim)',
-              }}>
-                <span>SEV</span>
-                <span>FINDING</span>
-                <span>OWASP</span>
-                <span>CVSS</span>
-                <span>CONF</span>
-              </div>
-
-              {filteredFindings.length === 0 && (
-                <div style={{ padding: 24, textAlign: 'center', color: 'var(--color-text-dim)', fontSize: 13 }}>
-                  No findings match the current filter.
+                <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)' }}>
+                  {scanProgress.message}
                 </div>
-              )}
-
-              {filteredFindings.map(f => (
-                <div
-                  key={f.id}
-                  onClick={() => setSelectedFinding(selectedFinding?.id === f.id ? null : f)}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '80px 1fr 100px 80px 60px',
-                    padding: '10px 14px',
-                    borderBottom: '1px solid var(--color-border)',
-                    cursor: 'pointer',
-                    background: selectedFinding?.id === f.id ? 'var(--color-dast-dim)' : 'transparent',
-                    transition: 'background 0.1s',
-                    alignItems: 'center',
-                  }}
-                >
-                  <span className={`label-tag sev-${f.severity.toLowerCase()}`}>{f.severity}</span>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>{f.title}</div>
-                    <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 2 }}>{f.affectedUrl}</div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginTop: 14 }}>
+                {[
+                  { label: 'Endpoints', value: scanProgress.endpointsDiscovered },
+                  { label: 'Tested', value: scanProgress.endpointsTested },
+                  { label: 'Payloads', value: scanProgress.payloadsSent },
+                  { label: 'Findings', value: scanProgress.findingsCount },
+                ].map(m => (
+                  <div key={m.label} style={{ background: 'var(--color-bg-elevated)', padding: '8px 10px', textAlign: 'center' }}>
+                    <div className="mono" style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-dast)' }}>{m.value}</div>
+                    <div style={{ fontSize: 10, color: 'var(--color-text-dim)' }}>{m.label}</div>
                   </div>
-                  <span className="mono" style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>{f.owaspCategory.split(' ')[0]}</span>
-                  <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: cvssColor(f.cvssScore) }}>{f.cvssScore ?? '\u2014'}</span>
-                  <span className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)' }}>{f.confidenceScore}%</span>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* Executive Summary Tab */}
-        {activeTab === 'executive' && (
-          <div className="bracket-card bracket-dast" style={{ padding: 24 }}>
-            {selectedScan.executiveSummary ? (
-              <div>{renderMarkdown(selectedScan.executiveSummary)}</div>
-            ) : (
-              <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-dim)' }}>
-                <div style={{ fontSize: 14, marginBottom: 8 }}>No executive summary available</div>
-                <div className="mono" style={{ fontSize: 11 }}>Run a scan with AI enrichment enabled to generate an executive summary.</div>
+                ))}
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
 
-        {/* Attack Chains Tab */}
-        {activeTab === 'attack-chains' && (
-          <AttackChainsPanel correlationData={correlationData} scanFindings={scanFindings} />
-        )}
+          {/* Scan Configuration Form (show when NOT scanning) */}
+          {!isScanning && (
+            <div className="bracket-card bracket-dast" style={{ padding: 24 }}>
+              <div className="mono" style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-dast)', letterSpacing: '0.1em', marginBottom: 18 }}>
+                NEW SCAN CONFIGURATION
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
+                <div>
+                  <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>TARGET URL</label>
+                  <input className="tac-input" placeholder="https://example.com" style={{ marginTop: 4 }} value={newScanUrl} onChange={e => setNewScanUrl(e.target.value)} />
+                </div>
+                <div>
+                  <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>SCAN NAME</label>
+                  <input className="tac-input" placeholder="My Web App Scan" style={{ marginTop: 4 }} value={newScanName} onChange={e => setNewScanName(e.target.value)} />
+                </div>
+              </div>
 
-        {/* Compliance Tab */}
-        {activeTab === 'compliance' && (
-          <CompliancePanel complianceData={complianceData} />
-        )}
+              {/* Profile Selector */}
+              <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em', marginBottom: 8 }}>SCAN PROFILE</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, marginBottom: 18 }}>
+                {(['full', 'quick', 'api_only', 'deep'] as const).map(profile => (
+                  <div
+                    key={profile}
+                    onClick={() => setNewScanProfile(profile)}
+                    style={{
+                      background: newScanProfile === profile ? 'var(--color-dast-dim)' : 'var(--color-bg-elevated)',
+                      border: `1px solid ${newScanProfile === profile ? 'var(--color-dast)' : 'var(--color-border)'}`,
+                      padding: '10px 14px',
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                    }}
+                  >
+                    <div className="mono" style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-primary)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                      {profile.replace('_', ' ')}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 2 }}>
+                      {profile === 'full' ? 'Spider + Active Scan' : profile === 'quick' ? 'Top 10 checks' : profile === 'api_only' ? 'API endpoints only' : 'All checks, max intensity'}
+                    </div>
+                  </div>
+                ))}
+              </div>
 
-        {/* Comparison Tab */}
-        {activeTab === 'comparison' && (
+              {/* Advanced Configuration Toggle */}
+              <div
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className="mono"
+                style={{
+                  fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--color-dast)',
+                  cursor: 'pointer', marginBottom: showAdvanced ? 14 : 0, userSelect: 'none',
+                }}
+              >
+                {showAdvanced ? '\u25BE' : '\u25B8'} ADVANCED CONFIGURATION
+              </div>
+
+              {showAdvanced && (
+                <div style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border)', padding: 16, marginBottom: 16 }}>
+                  {/* Auth Type Selector */}
+                  <div className="mono" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--color-text-dim)', marginBottom: 8 }}>
+                    AUTHENTICATION
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+                    {(['none', 'bearer', 'apikey', 'oauth2', 'cookie', 'header', 'form'] as const).map(at => (
+                      <button
+                        key={at}
+                        onClick={() => setAuthType(at)}
+                        className="mono"
+                        style={{
+                          background: authType === at ? 'var(--color-dast-dim)' : 'transparent',
+                          border: `1px solid ${authType === at ? 'var(--color-dast)' : 'var(--color-border)'}`,
+                          color: authType === at ? 'var(--color-dast)' : 'var(--color-text-dim)',
+                          padding: '4px 10px', fontSize: 10, fontWeight: 600, letterSpacing: '0.08em',
+                          cursor: 'pointer', textTransform: 'uppercase',
+                        }}
+                      >
+                        {at}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Auth-specific fields */}
+                  {authType === 'bearer' && (
+                    <div style={{ marginBottom: 14 }}>
+                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>BEARER TOKEN</label>
+                      <input className="tac-input" placeholder="eyJhbGciOiJIUzI1NiIs..." style={{ marginTop: 4 }} value={authBearerToken} onChange={e => setAuthBearerToken(e.target.value)} />
+                    </div>
+                  )}
+                  {authType === 'apikey' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                      <div>
+                        <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>API KEY</label>
+                        <input className="tac-input" placeholder="sk-..." style={{ marginTop: 4 }} value={authApiKey} onChange={e => setAuthApiKey(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>HEADER NAME</label>
+                        <input className="tac-input" placeholder="X-API-Key" style={{ marginTop: 4 }} value={authApiKeyHeader} onChange={e => setAuthApiKeyHeader(e.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                  {authType === 'oauth2' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                      <div>
+                        <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>TOKEN URL</label>
+                        <input className="tac-input" placeholder="https://auth.example.com/token" style={{ marginTop: 4 }} value={authOauth2TokenUrl} onChange={e => setAuthOauth2TokenUrl(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>CLIENT ID</label>
+                        <input className="tac-input" placeholder="client_id" style={{ marginTop: 4 }} value={authOauth2ClientId} onChange={e => setAuthOauth2ClientId(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>CLIENT SECRET</label>
+                        <input className="tac-input" type="password" placeholder="client_secret" style={{ marginTop: 4 }} value={authOauth2ClientSecret} onChange={e => setAuthOauth2ClientSecret(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>SCOPE (optional)</label>
+                        <input className="tac-input" placeholder="read write" style={{ marginTop: 4 }} value={authOauth2Scope} onChange={e => setAuthOauth2Scope(e.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                  {authType === 'cookie' && (
+                    <div style={{ marginBottom: 14 }}>
+                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>COOKIE VALUE</label>
+                      <input className="tac-input" placeholder="session=abc123; token=xyz" style={{ marginTop: 4 }} value={authCookieValue} onChange={e => setAuthCookieValue(e.target.value)} />
+                    </div>
+                  )}
+                  {authType === 'header' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                      <div>
+                        <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>HEADER NAME</label>
+                        <input className="tac-input" placeholder="X-Custom-Auth" style={{ marginTop: 4 }} value={authHeaderName} onChange={e => setAuthHeaderName(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>HEADER VALUE</label>
+                        <input className="tac-input" placeholder="custom-token-value" style={{ marginTop: 4 }} value={authHeaderValue} onChange={e => setAuthHeaderValue(e.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                  {authType === 'form' && (
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
+                        <div>
+                          <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>LOGIN URL</label>
+                          <input className="tac-input" placeholder="https://example.com/login" style={{ marginTop: 4 }} value={authFormLoginUrl} onChange={e => setAuthFormLoginUrl(e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>USERNAME</label>
+                          <input className="tac-input" placeholder="testuser" style={{ marginTop: 4 }} value={authFormUsername} onChange={e => setAuthFormUsername(e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>PASSWORD</label>
+                          <input className="tac-input" type="password" placeholder="password" style={{ marginTop: 4 }} value={authFormPassword} onChange={e => setAuthFormPassword(e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>USERNAME FIELD NAME</label>
+                          <input className="tac-input" placeholder="username" style={{ marginTop: 4 }} value={authFormUsernameField} onChange={e => setAuthFormUsernameField(e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>PASSWORD FIELD NAME</label>
+                          <input className="tac-input" placeholder="password" style={{ marginTop: 4 }} value={authFormPasswordField} onChange={e => setAuthFormPasswordField(e.target.value)} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Scope Configuration */}
+                  <div className="mono" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--color-text-dim)', marginBottom: 8, marginTop: 10 }}>
+                    SCOPE CONFIGURATION
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>INCLUDE PATHS (one per line)</label>
+                      <textarea
+                        className="tac-input"
+                        placeholder={'/api/*\n/app/*\n/admin/*'}
+                        rows={3}
+                        style={{ marginTop: 4, resize: 'vertical', fontFamily: 'var(--font-mono)', fontSize: 11 }}
+                        value={scopeInclude}
+                        onChange={e => setScopeInclude(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>EXCLUDE PATHS (one per line)</label>
+                      <textarea
+                        className="tac-input"
+                        placeholder={'/logout\n/static/*\n*.pdf'}
+                        rows={3}
+                        style={{ marginTop: 4, resize: 'vertical', fontFamily: 'var(--font-mono)', fontSize: 11 }}
+                        value={scopeExclude}
+                        onChange={e => setScopeExclude(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Launch Button */}
+              <div style={{ display: 'flex', gap: 10, marginTop: showAdvanced ? 0 : 18 }}>
+                <button
+                  onClick={() => {
+                    const name = newScanName.trim() || 'DAST Scan'
+                    const url = newScanUrl.trim()
+                    if (!url) return
+                    startRealScan(name, url, newScanProfile)
+                    setNewScanName(''); setNewScanUrl(''); setNewScanProfile('full')
+                    setAuthType('none'); setShowAdvanced(false)
+                  }}
+                  disabled={!newScanUrl.trim()}
+                  style={{
+                    background: 'var(--color-dast)',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '10px 28px',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: '0.12em',
+                    textTransform: 'uppercase',
+                    cursor: !newScanUrl.trim() ? 'not-allowed' : 'pointer',
+                    opacity: !newScanUrl.trim() ? 0.5 : 1,
+                  }}
+                >
+                  START SCAN
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Empty State (no scans, not scanning) */}
+          {scans.length === 0 && !isScanning && (
+            <div style={{ textAlign: 'center', padding: '50px 20px', color: 'var(--color-text-dim)', marginTop: 20 }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 8 }}>No scans yet</div>
+              <div className="mono" style={{ fontSize: 11 }}>
+                Configure the form above and click &quot;START SCAN&quot; to run your first DAST scan.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── HISTORY TAB ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'history' && (
+        <div style={{ marginTop: 20 }}>
+          {scans.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '50px 20px', color: 'var(--color-text-dim)' }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 8 }}>No scan history</div>
+              <div className="mono" style={{ fontSize: 11 }}>Run a scan from the SCANNER tab to see it here.</div>
+            </div>
+          ) : (
+            <>
+              {/* Scan Table */}
+              <div style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
+                <div className="mono" style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr 90px 70px 50px 50px 50px 70px 130px',
+                  padding: '8px 14px',
+                  borderBottom: '1px solid var(--color-border)',
+                  fontSize: 9,
+                  fontWeight: 600,
+                  letterSpacing: '0.1em',
+                  color: 'var(--color-text-dim)',
+                }}>
+                  <span>NAME</span>
+                  <span>TARGET</span>
+                  <span>STATUS</span>
+                  <span style={{ textAlign: 'center' }}>RISK</span>
+                  <span style={{ textAlign: 'center' }}>C</span>
+                  <span style={{ textAlign: 'center' }}>H</span>
+                  <span style={{ textAlign: 'center' }}>M</span>
+                  <span style={{ textAlign: 'center' }}>L+I</span>
+                  <span style={{ textAlign: 'right' }}>DATE</span>
+                </div>
+
+                {scans.map(s => (
+                  <div
+                    key={s.id}
+                    onClick={() => { setSelectedScan(s); setSelectedFinding(null); setSeverityFilter('ALL') }}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr 90px 70px 50px 50px 50px 70px 130px',
+                      padding: '10px 14px',
+                      borderBottom: '1px solid var(--color-border)',
+                      cursor: 'pointer',
+                      background: selectedScan?.id === s.id ? 'var(--color-dast-dim)' : 'transparent',
+                      transition: 'background 0.1s',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span className="mono" style={{ fontSize: 11, fontWeight: 600, color: selectedScan?.id === s.id ? 'var(--color-dast)' : 'var(--color-text-primary)', letterSpacing: '0.04em' }}>
+                      {s.name}
+                    </span>
+                    <span className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {s.targetUrl}
+                    </span>
+                    <span className={`label-tag sev-${s.status === 'COMPLETED' ? 'low' : s.status === 'FAILED' ? 'critical' : s.status === 'RUNNING' ? 'medium' : 'info'}`} style={{ fontSize: 9, textAlign: 'center' }}>
+                      {s.status}
+                    </span>
+                    <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: riskColor(s.riskScore), textAlign: 'center' }}>
+                      {s.riskScore ?? '\u2014'}
+                    </span>
+                    <span className="mono" style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-critical)', textAlign: 'center' }}>{s.criticalCount ?? 0}</span>
+                    <span className="mono" style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-high)', textAlign: 'center' }}>{s.highCount ?? 0}</span>
+                    <span className="mono" style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-medium)', textAlign: 'center' }}>{s.mediumCount ?? 0}</span>
+                    <span className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)', textAlign: 'center' }}>
+                      {(s.lowCount ?? 0) + (s.infoCount ?? 0)}
+                    </span>
+                    <span className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', textAlign: 'right' }}>
+                      {s.completedAt ? new Date(s.completedAt).toLocaleDateString() : s.createdAt ? new Date(s.createdAt).toLocaleDateString() : '\u2014'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Selected Scan Detail */}
+              {selectedScan && (
+                <div style={{ marginTop: 24 }}>
+                  {/* Score Cards */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10, marginBottom: 20 }}>
+                    <div className="bracket-card bracket-dast" style={{ padding: '12px 14px', textAlign: 'center' }}>
+                      <div className="mono" style={{ fontSize: 24, fontWeight: 700, color: riskColor(selectedScan.riskScore) }}>{selectedScan.riskScore}</div>
+                      <div style={{ fontSize: 10, color: 'var(--color-text-dim)' }}>Risk Score</div>
+                    </div>
+                    {([
+                      { label: 'CRITICAL', count: selectedScan.criticalCount, sev: 'critical' },
+                      { label: 'HIGH', count: selectedScan.highCount, sev: 'high' },
+                      { label: 'MEDIUM', count: selectedScan.mediumCount, sev: 'medium' },
+                      { label: 'LOW', count: selectedScan.lowCount, sev: 'low' },
+                      { label: 'INFO', count: selectedScan.infoCount, sev: 'info' },
+                    ] as const).map(c => (
+                      <div key={c.label} style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', padding: '12px 14px', textAlign: 'center' }}>
+                        <div className="mono" style={{ fontSize: 22, fontWeight: 700, color: `var(--color-${c.sev === 'info' ? 'blueteam' : c.sev})` }}>{c.count}</div>
+                        <div className={`label-tag sev-${c.sev}`} style={{ fontSize: 9 }}>{c.label}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Executive Summary */}
+                  {selectedScan.executiveSummary && (
+                    <div className="bracket-card bracket-dast" style={{ padding: 24, marginBottom: 20 }}>
+                      <div className="mono" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.14em', color: 'var(--color-dast)', marginBottom: 12 }}>EXECUTIVE SUMMARY</div>
+                      <div>{renderMarkdown(selectedScan.executiveSummary)}</div>
+                    </div>
+                  )}
+
+                  {/* Severity Filter */}
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+                    {(['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'] as const).map(sev => (
+                      <button
+                        key={sev}
+                        onClick={() => setSeverityFilter(sev)}
+                        className="mono"
+                        style={{
+                          background: severityFilter === sev ? 'var(--color-bg-elevated)' : 'transparent',
+                          border: `1px solid ${severityFilter === sev ? 'var(--color-border-bright)' : 'var(--color-border)'}`,
+                          color: severityFilter === sev ? 'var(--color-text-primary)' : 'var(--color-text-dim)',
+                          padding: '4px 12px',
+                          fontSize: 10,
+                          fontWeight: 600,
+                          letterSpacing: '0.1em',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {sev} {sev === 'ALL' ? `(${totalForScan})` : ''}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Findings Table */}
+                  <div style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
+                    <div className="mono" style={{
+                      display: 'grid',
+                      gridTemplateColumns: '80px 1fr 100px 80px 60px',
+                      padding: '8px 14px',
+                      borderBottom: '1px solid var(--color-border)',
+                      fontSize: 10,
+                      fontWeight: 600,
+                      letterSpacing: '0.1em',
+                      color: 'var(--color-text-dim)',
+                    }}>
+                      <span>SEV</span>
+                      <span>FINDING</span>
+                      <span>OWASP</span>
+                      <span>CVSS</span>
+                      <span>CONF</span>
+                    </div>
+
+                    {filteredFindings.length === 0 && (
+                      <div style={{ padding: 24, textAlign: 'center', color: 'var(--color-text-dim)', fontSize: 13 }}>
+                        No findings match the current filter.
+                      </div>
+                    )}
+
+                    {filteredFindings.map(f => (
+                      <div key={f.id}>
+                        <div
+                          onClick={() => setSelectedFinding(selectedFinding?.id === f.id ? null : f)}
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '80px 1fr 100px 80px 60px',
+                            padding: '10px 14px',
+                            borderBottom: '1px solid var(--color-border)',
+                            cursor: 'pointer',
+                            background: selectedFinding?.id === f.id ? 'var(--color-dast-dim)' : 'transparent',
+                            transition: 'background 0.1s',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <span className={`label-tag sev-${f.severity.toLowerCase()}`}>{f.severity}</span>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>{f.title}</div>
+                            <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 2 }}>{f.affectedUrl}</div>
+                          </div>
+                          <span className="mono" style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>{f.owaspCategory.split(' ')[0]}</span>
+                          <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: cvssColor(f.cvssScore) }}>{f.cvssScore ?? '\u2014'}</span>
+                          <span className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)' }}>{f.confidenceScore}%</span>
+                        </div>
+
+                        {/* Inline Finding Detail (expanded) */}
+                        {selectedFinding?.id === f.id && (
+                          <FindingDetail finding={f} onClose={() => setSelectedFinding(null)} />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── ATTACK CHAINS TAB ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'attack-chains' && (
+        <div style={{ marginTop: 20 }}>
+          {!selectedScan ? (
+            <div style={{ textAlign: 'center', padding: '50px 20px', color: 'var(--color-text-dim)' }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 8 }}>No scan selected</div>
+              <div className="mono" style={{ fontSize: 11 }}>Select a scan from the HISTORY tab to view attack chain analysis.</div>
+            </div>
+          ) : (
+            <AttackChainsPanel correlationData={correlationData} scanFindings={scanFindings} />
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── COMPLIANCE TAB ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'compliance' && (
+        <div style={{ marginTop: 20 }}>
+          {!selectedScan ? (
+            <div style={{ textAlign: 'center', padding: '50px 20px', color: 'var(--color-text-dim)' }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 8 }}>No scan selected</div>
+              <div className="mono" style={{ fontSize: 11 }}>Select a scan from the HISTORY tab to view compliance mapping.</div>
+            </div>
+          ) : (
+            <CompliancePanel complianceData={complianceData} />
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── COMPARE TAB ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'compare' && (
+        <div style={{ marginTop: 20 }}>
           <ComparisonPanel
             scans={scans}
             compBaselineId={compBaselineId}
@@ -856,41 +914,133 @@ export default function DastPage() {
             compLoading={compLoading}
             runComparison={runComparison}
           />
-        )}
+        </div>
+      )}
 
-        {/* Schedules Tab */}
-        {activeTab === 'schedules' && (
-          <SchedulesPanel
-            schedules={schedules}
-            schedulesLoaded={schedulesLoaded}
-            fetchSchedules={fetchSchedules}
-            showNewSchedule={showNewSchedule}
-            setShowNewSchedule={setShowNewSchedule}
-            schedName={schedName}
-            setSchedName={setSchedName}
-            schedUrl={schedUrl}
-            setSchedUrl={setSchedUrl}
-            schedProfile={schedProfile}
-            setSchedProfile={setSchedProfile}
-            schedFrequency={schedFrequency}
-            setSchedFrequency={setSchedFrequency}
-          />
-        )}
-        </>
-        )}
-      </div>
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── REPORT TAB ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'report' && (
+        <div style={{ marginTop: 20 }}>
+          <div className="bracket-card bracket-dast" style={{ padding: 24 }}>
+            <div className="mono" style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--color-dast)', marginBottom: 18 }}>
+              GENERATE SECURITY REPORT
+            </div>
 
-      {/* ═══ Right: Detail Panel ═══ */}
-      <div style={{
-        width: selectedFinding ? 440 : 0,
-        minWidth: selectedFinding ? 440 : 0,
-        borderLeft: selectedFinding ? '1px solid var(--color-border)' : 'none',
-        background: 'var(--color-bg-surface)',
-        overflowY: 'auto',
-        transition: 'width 0.2s, min-width 0.2s',
-      }}>
-        {selectedFinding && <FindingDetail finding={selectedFinding} onClose={() => setSelectedFinding(null)} />}
-      </div>
+            {completedScans.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--color-text-dim)' }}>
+                <div style={{ fontSize: 14, marginBottom: 8 }}>No completed scans available</div>
+                <div className="mono" style={{ fontSize: 11 }}>Complete a DAST scan first to generate a report.</div>
+              </div>
+            ) : (
+              <>
+                {/* Scan Selector */}
+                <div style={{ marginBottom: 18 }}>
+                  <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>SELECT SCAN</label>
+                  <select
+                    className="tac-input"
+                    style={{ marginTop: 4 }}
+                    value={reportScanId}
+                    onChange={e => { setReportScanId(e.target.value); setReportSuccess(null); setReportError(null) }}
+                  >
+                    <option value="">Select a completed scan...</option>
+                    {completedScans.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} -- {s.targetUrl} ({s.completedAt ? new Date(s.completedAt).toLocaleDateString() : 'N/A'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Format Selector */}
+                <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em', marginBottom: 10 }}>
+                  REPORT FORMAT
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 20 }}>
+                  {([
+                    { id: 'pdf' as const, label: 'PDF', desc: 'HTML report (save as PDF via browser)' },
+                    { id: 'json' as const, label: 'JSON', desc: 'Structured data for integrations' },
+                    { id: 'csv' as const, label: 'CSV', desc: 'Spreadsheet-compatible export' },
+                  ]).map(fmt => (
+                    <div
+                      key={fmt.id}
+                      onClick={() => setReportFormat(fmt.id)}
+                      style={{
+                        background: reportFormat === fmt.id ? 'var(--color-dast-dim)' : 'var(--color-bg-elevated)',
+                        border: `1px solid ${reportFormat === fmt.id ? 'var(--color-dast)' : 'var(--color-border)'}`,
+                        padding: '14px 16px',
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                      }}
+                    >
+                      <div className="mono" style={{ fontSize: 14, fontWeight: 700, color: reportFormat === fmt.id ? 'var(--color-dast)' : 'var(--color-text-primary)', letterSpacing: '0.1em', marginBottom: 4 }}>
+                        {fmt.label}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--color-text-dim)' }}>
+                        {fmt.desc}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Selected Scan Summary */}
+                {reportScan && (
+                  <div style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border)', padding: 16, marginBottom: 20 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>{reportScan.name}</div>
+                        <div className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 2 }}>{reportScan.targetUrl}</div>
+                      </div>
+                      <div className="mono" style={{ fontSize: 24, fontWeight: 700, color: riskColor(reportScan.riskScore) }}>
+                        {reportScan.riskScore}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 12 }}>
+                      <span className="label-tag sev-critical">C: {reportScan.criticalCount ?? 0}</span>
+                      <span className="label-tag sev-high">H: {reportScan.highCount ?? 0}</span>
+                      <span className="label-tag sev-medium">M: {reportScan.mediumCount ?? 0}</span>
+                      <span className="label-tag sev-low">L: {reportScan.lowCount ?? 0}</span>
+                      <span className="label-tag sev-info">I: {reportScan.infoCount ?? 0}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Generate Button */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                  <button
+                    onClick={handleGenerateReport}
+                    disabled={!reportScanId || reportGenerating}
+                    style={{
+                      background: (!reportScanId || reportGenerating) ? 'var(--color-bg-elevated)' : 'var(--color-dast)',
+                      color: (!reportScanId || reportGenerating) ? 'var(--color-text-dim)' : '#fff',
+                      border: 'none',
+                      padding: '10px 28px',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      letterSpacing: '0.12em',
+                      textTransform: 'uppercase',
+                      cursor: (!reportScanId || reportGenerating) ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {reportGenerating ? 'GENERATING...' : 'GENERATE REPORT'}
+                  </button>
+                  {reportSuccess && (
+                    <div className="mono" style={{ fontSize: 11, color: 'var(--color-scanner)' }}>
+                      {reportSuccess}
+                    </div>
+                  )}
+                  {reportError && (
+                    <div className="mono" style={{ fontSize: 11, color: 'var(--color-critical)' }}>
+                      {reportError}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1143,7 +1293,7 @@ function CompliancePanel({ complianceData }: {
   )
 }
 
-// ─── Finding Detail Panel ────────────────────────────────────────────────────
+// ─── Finding Detail (Inline Expansion) ──────────────────────────────────────
 
 function FindingDetail({ finding, onClose }: { finding: DastFinding; onClose: () => void }) {
   let remCode: { vulnerableCode?: string; remediatedCode?: string; explanation?: string; language?: string; framework?: string; configurationFix?: string; securityHeaders?: string; wafRule?: string } | null = null
@@ -1157,7 +1307,7 @@ function FindingDetail({ finding, onClose }: { finding: DastFinding; onClose: ()
   }
 
   return (
-    <div style={{ padding: '20px 18px' }}>
+    <div style={{ padding: '20px 18px', background: 'var(--color-bg-surface)', borderBottom: '2px solid var(--color-dast)' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div style={{ flex: 1 }}>
@@ -1417,7 +1567,7 @@ function ComparisonPanel({ scans, compBaselineId, compCurrentId, setCompBaseline
             <select className="tac-input" style={{ marginTop: 4 }} value={compBaselineId} onChange={e => setCompBaselineId(e.target.value)}>
               <option value="">Select scan...</option>
               {completedScans.map(s => (
-                <option key={s.id} value={s.id}>{s.name} — {s.completedAt ? new Date(s.completedAt).toLocaleDateString() : 'N/A'}</option>
+                <option key={s.id} value={s.id}>{s.name} -- {s.completedAt ? new Date(s.completedAt).toLocaleDateString() : 'N/A'}</option>
               ))}
             </select>
           </div>
@@ -1427,7 +1577,7 @@ function ComparisonPanel({ scans, compBaselineId, compCurrentId, setCompBaseline
             <select className="tac-input" style={{ marginTop: 4 }} value={compCurrentId} onChange={e => setCompCurrentId(e.target.value)}>
               <option value="">Select scan...</option>
               {completedScans.map(s => (
-                <option key={s.id} value={s.id}>{s.name} — {s.completedAt ? new Date(s.completedAt).toLocaleDateString() : 'N/A'}</option>
+                <option key={s.id} value={s.id}>{s.name} -- {s.completedAt ? new Date(s.completedAt).toLocaleDateString() : 'N/A'}</option>
               ))}
             </select>
           </div>
@@ -1501,7 +1651,7 @@ function ComparisonPanel({ scans, compBaselineId, compCurrentId, setCompBaseline
                   {d.delta > 0 ? '+' : ''}{d.delta}
                 </span>
                 <span className="mono" style={{ fontSize: 9, fontWeight: 700, textAlign: 'right', letterSpacing: '0.08em', color: trendColor(d.direction) }}>
-                  {d.direction === 'unchanged' ? '—' : d.direction === 'improved' ? '▲' : '▼'} {d.percentage !== 0 ? `${Math.abs(d.percentage)}%` : ''}
+                  {d.direction === 'unchanged' ? '\u2014' : d.direction === 'improved' ? '\u25B2' : '\u25BC'} {d.percentage !== 0 ? `${Math.abs(d.percentage)}%` : ''}
                 </span>
               </div>
             ))}
@@ -1570,221 +1720,6 @@ function ComparisonPanel({ scans, compBaselineId, compCurrentId, setCompBaseline
           <div className="mono" style={{ fontSize: 11 }}>Choose a baseline and current scan to see trends, new findings, and resolved issues.</div>
         </div>
       )}
-    </div>
-  )
-}
-
-// ─── Schedules Panel ─────────────────────────────────────────────────────────
-
-function SchedulesPanel({ schedules, schedulesLoaded, fetchSchedules, showNewSchedule, setShowNewSchedule, schedName, setSchedName, schedUrl, setSchedUrl, schedProfile, setSchedProfile, schedFrequency, setSchedFrequency }: {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  schedules: any[]
-  schedulesLoaded: boolean
-  fetchSchedules: () => void
-  showNewSchedule: boolean
-  setShowNewSchedule: (v: boolean) => void
-  schedName: string
-  setSchedName: (v: string) => void
-  schedUrl: string
-  setSchedUrl: (v: string) => void
-  schedProfile: string
-  setSchedProfile: (v: string) => void
-  schedFrequency: string
-  setSchedFrequency: (v: string) => void
-}) {
-  useEffect(() => {
-    if (!schedulesLoaded) fetchSchedules()
-  }, [schedulesLoaded, fetchSchedules])
-
-  const statusColor = (s: string) =>
-    s === 'active' ? 'var(--color-scanner)' : s === 'paused' ? 'var(--color-medium)' : 'var(--color-text-dim)'
-
-  const freqLabel: Record<string, string> = {
-    daily: 'Daily', weekly: 'Weekly', biweekly: 'Biweekly', monthly: 'Monthly', quarterly: 'Quarterly',
-  }
-
-  async function handleCreateSchedule() {
-    if (!schedName.trim() || !schedUrl.trim()) return
-    try {
-      await fetch('/api/dast/schedules', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create', name: schedName.trim(), targetUrl: schedUrl.trim(), scanProfile: schedProfile, frequency: schedFrequency }),
-      })
-      setShowNewSchedule(false)
-      setSchedName(''); setSchedUrl(''); setSchedProfile('full'); setSchedFrequency('weekly')
-      fetchSchedules()
-    } catch { /* ignore */ }
-  }
-
-  async function toggleStatus(id: string, currentStatus: string) {
-    const newStatus = currentStatus === 'active' ? 'paused' : 'active'
-    try {
-      await fetch('/api/dast/schedules', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update', id, status: newStatus }),
-      })
-      fetchSchedules()
-    } catch { /* ignore */ }
-  }
-
-  async function handleDelete(id: string) {
-    try {
-      await fetch('/api/dast/schedules', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'delete', id }),
-      })
-      fetchSchedules()
-    } catch { /* ignore */ }
-  }
-
-  return (
-    <div>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <div>
-          <div className="mono" style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-secondary)', letterSpacing: '0.08em' }}>
-            Recurring Scan Schedules
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 2 }}>
-            Automated DAST scans run on configured intervals
-          </div>
-        </div>
-        <button
-          onClick={() => setShowNewSchedule(!showNewSchedule)}
-          style={{
-            background: 'var(--color-dast)', color: '#fff', border: 'none',
-            padding: '6px 16px', fontFamily: 'var(--font-mono)', fontSize: 10,
-            fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer',
-          }}
-        >
-          + NEW SCHEDULE
-        </button>
-      </div>
-
-      {/* New Schedule Form */}
-      {showNewSchedule && (
-        <div className="bracket-card bracket-dast" style={{ padding: 16, marginBottom: 16 }}>
-          <div className="mono" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--color-dast)', marginBottom: 12 }}>
-            CREATE SCHEDULE
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-            <div>
-              <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>SCHEDULE NAME</label>
-              <input className="tac-input" placeholder="Production Weekly Scan" style={{ marginTop: 4 }} value={schedName} onChange={e => setSchedName(e.target.value)} />
-            </div>
-            <div>
-              <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>TARGET URL</label>
-              <input className="tac-input" placeholder="https://example.com" style={{ marginTop: 4 }} value={schedUrl} onChange={e => setSchedUrl(e.target.value)} />
-            </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-            <div>
-              <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>SCAN PROFILE</label>
-              <select className="tac-input" style={{ marginTop: 4 }} value={schedProfile} onChange={e => setSchedProfile(e.target.value)}>
-                <option value="full">Full Scan</option>
-                <option value="quick">Quick Scan</option>
-                <option value="api_only">API Only</option>
-                <option value="deep">Deep Scan</option>
-              </select>
-            </div>
-            <div>
-              <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>FREQUENCY</label>
-              <select className="tac-input" style={{ marginTop: 4 }} value={schedFrequency} onChange={e => setSchedFrequency(e.target.value)}>
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="biweekly">Every 2 Weeks</option>
-                <option value="monthly">Monthly</option>
-                <option value="quarterly">Quarterly</option>
-              </select>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button
-              onClick={handleCreateSchedule}
-              disabled={!schedName.trim() || !schedUrl.trim()}
-              style={{
-                background: 'var(--color-dast)', color: '#fff', border: 'none',
-                padding: '6px 18px', fontFamily: 'var(--font-mono)', fontSize: 10,
-                fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase',
-                cursor: (!schedName.trim() || !schedUrl.trim()) ? 'not-allowed' : 'pointer',
-                opacity: (!schedName.trim() || !schedUrl.trim()) ? 0.5 : 1,
-              }}
-            >
-              CREATE
-            </button>
-            <button
-              onClick={() => setShowNewSchedule(false)}
-              style={{
-                background: 'transparent', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)',
-                padding: '6px 14px', fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', cursor: 'pointer',
-              }}
-            >
-              CANCEL
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Schedule List */}
-      {schedules.length === 0 && schedulesLoaded && (
-        <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-dim)' }}>
-          <div style={{ fontSize: 14, marginBottom: 8 }}>No schedules configured</div>
-          <div className="mono" style={{ fontSize: 11 }}>Create a schedule to run automated recurring DAST scans.</div>
-        </div>
-      )}
-
-      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-      {schedules.map((sched: any) => (
-        <div key={sched.id} className="bracket-card" style={{ padding: 16, marginBottom: 10, borderColor: statusColor(sched.status) }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>{sched.name}</span>
-                <span className="mono" style={{ fontSize: 9, fontWeight: 700, color: statusColor(sched.status), letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                  {sched.status}
-                </span>
-              </div>
-              <div className="mono" style={{ fontSize: 11, color: 'var(--color-dast)', marginBottom: 6 }}>{sched.targetUrl}</div>
-              <div style={{ display: 'flex', gap: 16, fontSize: 11, color: 'var(--color-text-dim)' }}>
-                <span><strong style={{ color: 'var(--color-text-secondary)' }}>Profile:</strong> {sched.scanProfile}</span>
-                <span><strong style={{ color: 'var(--color-text-secondary)' }}>Frequency:</strong> {freqLabel[sched.frequency] ?? sched.frequency}</span>
-                <span><strong style={{ color: 'var(--color-text-secondary)' }}>Runs:</strong> {sched.totalRuns}</span>
-              </div>
-              <div style={{ display: 'flex', gap: 16, fontSize: 11, color: 'var(--color-text-dim)', marginTop: 4 }}>
-                <span><strong style={{ color: 'var(--color-text-secondary)' }}>Next:</strong> {sched.nextRunAt ? new Date(sched.nextRunAt).toLocaleString() : 'N/A'}</span>
-                <span><strong style={{ color: 'var(--color-text-secondary)' }}>Last:</strong> {sched.lastRunAt ? new Date(sched.lastRunAt).toLocaleString() : 'Never'}</span>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button
-                onClick={() => toggleStatus(sched.id, sched.status)}
-                className="mono"
-                style={{
-                  background: 'transparent', border: '1px solid var(--color-border)',
-                  color: sched.status === 'active' ? 'var(--color-medium)' : 'var(--color-scanner)',
-                  padding: '4px 10px', fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', cursor: 'pointer',
-                }}
-              >
-                {sched.status === 'active' ? 'PAUSE' : 'RESUME'}
-              </button>
-              <button
-                onClick={() => handleDelete(sched.id)}
-                className="mono"
-                style={{
-                  background: 'transparent', border: '1px solid var(--color-border)',
-                  color: 'var(--color-critical)', padding: '4px 10px', fontSize: 9,
-                  fontWeight: 600, letterSpacing: '0.08em', cursor: 'pointer',
-                }}
-              >
-                DELETE
-              </button>
-            </div>
-          </div>
-        </div>
-      ))}
     </div>
   )
 }

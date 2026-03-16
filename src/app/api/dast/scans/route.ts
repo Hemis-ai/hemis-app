@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma, isDatabaseReachable } from '@/lib/db'
 import { verifyAccessToken, ACCESS_COOKIE } from '@/lib/auth/jwt'
 import { runDastScan } from '@/lib/dast/scan-orchestrator'
-import { MOCK_DAST_SCANS } from '@/lib/mock-data/dast'
 
 /**
  * GET /api/dast/scans — List DAST scans for the org
@@ -11,7 +10,7 @@ export async function GET(req: NextRequest) {
   try {
     const dbOk = await isDatabaseReachable()
     if (!dbOk) {
-      return NextResponse.json({ scans: MOCK_DAST_SCANS, pagination: { page: 1, pageSize: 20, total: MOCK_DAST_SCANS.length, totalPages: 1 }, demo: true })
+      return NextResponse.json({ scans: [], pagination: { page: 1, pageSize: 20, total: 0, totalPages: 0 }, demo: true })
     }
 
     const token = req.cookies.get(ACCESS_COOKIE)?.value
@@ -34,7 +33,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ scans, pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } })
   } catch (error) {
     console.error('GET /api/dast/scans error:', error)
-    return NextResponse.json({ scans: MOCK_DAST_SCANS, pagination: { page: 1, pageSize: 20, total: MOCK_DAST_SCANS.length, totalPages: 1 }, demo: true })
+    return NextResponse.json({ scans: [], pagination: { page: 1, pageSize: 20, total: 0, totalPages: 0 }, demo: true })
   }
 }
 

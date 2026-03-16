@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, isDatabaseReachable } from '@/lib/db'
-import { MOCK_DAST_FINDINGS } from '@/lib/mock-data/dast'
 
 /**
  * GET /api/dast/findings?scanId=xxx — List findings for a scan
@@ -12,8 +11,7 @@ export async function GET(req: NextRequest) {
 
     const dbOk = await isDatabaseReachable()
     if (!dbOk) {
-      const findings = MOCK_DAST_FINDINGS.filter((f) => f.scanId === scanId)
-      return NextResponse.json({ findings, pagination: { page: 1, pageSize: 50, total: findings.length, totalPages: 1 }, demo: true })
+      return NextResponse.json({ findings: [], pagination: { page: 1, pageSize: 50, total: 0, totalPages: 0 }, demo: true })
     }
 
     const severity = req.nextUrl.searchParams.get('severity') || undefined
