@@ -1,17 +1,25 @@
-"""Main scanner orchestrator that runs all plugins against discovered endpoints."""
+"""
+Main scanner orchestrator — runs all plugins against discovered endpoints.
+
+Improvements over naive scanning:
+1. Populates response_body and content_type on ScanTargets for passive analysis
+2. Runs passive plugins only on unique domains (not per-URL duplicates)
+3. Cleans up shared HTTP client pool after scan
+4. Resets per-scan state (e.g., header dedup tracking)
+"""
 from __future__ import annotations
 import asyncio
 from typing import Optional, Callable
-from .base_plugin import BasePlugin, ScanTarget, RawFinding
+from .base_plugin import BasePlugin, ScanTarget, RawFinding, get_shared_client, close_shared_client
 from .plugins.sqli import SQLiPlugin
 from .plugins.xss import XSSPlugin
 from .plugins.cmdi import CommandInjectionPlugin
 from .plugins.path_traversal import PathTraversalPlugin
 from .plugins.ssrf import SSRFPlugin
 from .plugins.open_redirect import OpenRedirectPlugin
-from .plugins.header_analysis import HeaderAnalysisPlugin
+from .plugins.header_analysis import HeaderAnalysisPlugin, reset_reported_domains
 from .plugins.cookie_analysis import CookieAnalysisPlugin
-from .plugins.cors import CORSPlugin
+from .plugins.cors import CORSPlugin, reset_cors_reported
 from .plugins.info_disclosure import InfoDisclosurePlugin
 from ..crawler.crawler import CrawlResult, FormTarget
 from ..config import settings
@@ -19,14 +27,12 @@ from ..config import settings
 
 def get_plugins(profile: str = "full") -> list[BasePlugin]:
     """Get plugins based on scan profile."""
-    # Passive plugins (always run)
     passive = [
         HeaderAnalysisPlugin(),
         CookieAnalysisPlugin(),
         CORSPlugin(),
         InfoDisclosurePlugin(),
     ]
-    # Active plugins
     active = [
         SQLiPlugin(),
         XSSPlugin(),
@@ -36,16 +42,12 @@ def get_plugins(profile: str = "full") -> list[BasePlugin]:
         OpenRedirectPlugin(),
     ]
     if profile == "quick":
-        # Quick: only top-risk active + passive
         return passive + [SQLiPlugin(), XSSPlugin()]
     elif profile == "api_only":
-        # API: injection-focused
         return [SQLiPlugin(), CommandInjectionPlugin(), SSRFPlugin(), HeaderAnalysisPlugin(), CORSPlugin()]
     elif profile == "deep":
-        # Deep: all plugins
         return passive + active
     else:
-        # Full: all plugins
         return passive + active
 
 
@@ -62,21 +64,29 @@ class Scanner:
         self.plugins = get_plugins(profile)
         self.auth_headers = auth_headers or {}
         self.auth_cookies = auth_cookies or {}
-        self.on_progress = on_progress  # (tested, total, payloads, message)
+        self.on_progress = on_progress
         self.total_payloads = 0
 
     async def scan(self) -> list[RawFinding]:
         """Run all plugins against all discovered endpoints."""
         findings: list[RawFinding] = []
+
+        # Reset per-scan state
+        reset_reported_domains()
+        reset_cors_reported()
+
         targets = self._build_targets()
+
+        # Fetch response bodies for passive analysis targets
+        await self._populate_response_bodies(targets)
+
         total = len(targets)
         tested = 0
 
-        # Run passive plugins on all targets first
         passive_plugins = [p for p in self.plugins if isinstance(p, (HeaderAnalysisPlugin, CookieAnalysisPlugin, CORSPlugin, InfoDisclosurePlugin))]
         active_plugins = [p for p in self.plugins if p not in passive_plugins]
 
-        # Passive scan (fast, no injection)
+        # ── Passive scan (no injection, uses stored response data) ──
         for target in targets:
             for plugin in passive_plugins:
                 try:
@@ -86,7 +96,7 @@ class Scanner:
                 except Exception:
                     pass
 
-        # Active scan (injection-based, controlled concurrency)
+        # ── Active scan (injection-based, controlled concurrency) ──
         semaphore = asyncio.Semaphore(settings.max_concurrent_requests)
 
         async def scan_target(target: ScanTarget, idx: int):
@@ -105,7 +115,6 @@ class Scanner:
                 self.on_progress(tested, total, self.total_payloads, f"Testing endpoint {tested}/{total}")
             return target_findings
 
-        # Process in batches
         batch_size = settings.max_concurrent_requests
         for i in range(0, len(targets), batch_size):
             batch = targets[i:i + batch_size]
@@ -115,7 +124,10 @@ class Scanner:
                 if isinstance(result, list):
                     findings.extend(result)
 
-        # Deduplicate findings by type + url + parameter
+        # Clean up shared client
+        await close_shared_client()
+
+        # ── Deduplicate findings ──
         seen = set()
         unique_findings = []
         for f in findings:
@@ -126,12 +138,36 @@ class Scanner:
 
         return unique_findings
 
+    async def _populate_response_bodies(self, targets: list[ScanTarget]):
+        """Fetch response bodies for targets that need passive analysis.
+        This gives passive plugins (header analysis, DOM XSS) real response data."""
+        client = await get_shared_client()
+        for target in targets:
+            if target.response_body:
+                continue  # Already populated
+            try:
+                resp = await client.get(
+                    target.url,
+                    headers={"User-Agent": settings.user_agent, **self.auth_headers},
+                    cookies={**self.crawl_result.cookies, **self.auth_cookies},
+                    timeout=settings.request_timeout,
+                    follow_redirects=True,
+                )
+                target.response_body = resp.text[:500000]  # Cap at 500KB
+                target.content_type = resp.headers.get("content-type", "").lower()
+                target.response_status = resp.status_code
+                # Update response headers if not already set
+                if not target.response_headers:
+                    target.response_headers = dict(resp.headers)
+            except Exception:
+                pass
+
     def _build_targets(self) -> list[ScanTarget]:
         """Build ScanTarget objects from crawl results."""
         targets: list[ScanTarget] = []
         seen_urls = set()
 
-        # Targets from discovered URLs with parameters
+        # Targets from discovered URLs with parameters (active scan candidates)
         for url, params in self.crawl_result.parameters.items():
             if url in seen_urls:
                 continue
@@ -146,7 +182,7 @@ class Scanner:
                 response_headers=headers_for_url,
             ))
 
-        # Targets from discovered forms
+        # Targets from discovered forms (active scan candidates)
         for form in self.crawl_result.forms:
             if form.action in seen_urls:
                 continue
@@ -173,7 +209,7 @@ class Scanner:
                     response_headers=headers_for_url,
                 ))
                 seen_urls.add(url)
-                if len(targets) > 200:  # Limit passive targets
+                if len(targets) > 200:
                     break
 
         return targets

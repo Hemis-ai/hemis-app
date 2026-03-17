@@ -1,4 +1,6 @@
-"""Path Traversal / Local File Inclusion (LFI) detection."""
+"""
+Path Traversal / Local File Inclusion (LFI) detection — with baseline comparison.
+"""
 from __future__ import annotations
 import re
 import json
@@ -6,13 +8,11 @@ from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from ..base_plugin import BasePlugin, ScanTarget, RawFinding
 
 TRAVERSAL_PAYLOADS = [
-    ("../../../etc/passwd", r"root:.*:0:0", "/etc/passwd"),
-    ("....//....//....//etc/passwd", r"root:.*:0:0", "/etc/passwd"),
-    ("..%2F..%2F..%2Fetc%2Fpasswd", r"root:.*:0:0", "/etc/passwd"),
-    ("..\\..\\..\\windows\\win.ini", r"\[fonts\]|\[extensions\]", "win.ini"),
-    ("....\\\\....\\\\....\\\\windows\\\\win.ini", r"\[fonts\]|\[extensions\]", "win.ini"),
-    ("/etc/passwd", r"root:.*:0:0", "/etc/passwd"),
-    ("../../../etc/shadow", r"root:.*:\d+:", "/etc/shadow"),
+    ("../../../etc/passwd", r"root:x?:0:0:", "/etc/passwd"),
+    ("....//....//....//etc/passwd", r"root:x?:0:0:", "/etc/passwd"),
+    ("..%2F..%2F..%2Fetc%2Fpasswd", r"root:x?:0:0:", "/etc/passwd"),
+    ("..\\..\\..\\windows\\win.ini", r"\[fonts\]", "win.ini"),
+    ("/etc/passwd", r"root:x?:0:0:", "/etc/passwd"),
     ("../../../proc/self/environ", r"PATH=|HOME=|USER=", "/proc/self/environ"),
 ]
 
@@ -26,13 +26,8 @@ class PathTraversalPlugin(BasePlugin):
         test_params = [(p, "query") for p in target.parameters]
         test_params += [(f["name"], "form") for f in target.form_fields if f.get("name")]
 
-        # Also test common file-inclusion parameter names in the URL
-        parsed = urlparse(target.url)
-        path_parts = parsed.path.split("/")
-        file_params = {"file", "path", "page", "doc", "template", "include", "dir", "folder", "load"}
-        for p in target.parameters:
-            if p.lower() in file_params:
-                test_params.insert(0, (p, "query"))  # Prioritize likely file params
+        # Prioritize file-related parameter names
+        file_params = {"file", "path", "page", "doc", "template", "include", "dir", "folder", "load", "download"}
 
         seen_params = set()
         for param, source in test_params:
@@ -40,33 +35,54 @@ class PathTraversalPlugin(BasePlugin):
                 continue
             seen_params.add(param)
 
+            # Get baseline
+            baseline = await self._inject(target, param, "hemisxtest123", source)
+            if baseline is None:
+                continue
+
             for payload, detect_pattern, target_file in TRAVERSAL_PAYLOADS:
+                # Check pattern doesn't exist in baseline
+                if re.search(detect_pattern, baseline.text):
+                    continue
+
                 resp = await self._inject(target, param, payload, source)
-                if resp and re.search(detect_pattern, resp.text):
-                    match = re.search(detect_pattern, resp.text)
-                    evidence = resp.text[max(0, match.start()-30):match.end()+50] if match else ""
-                    findings.append(RawFinding(
-                        vuln_type="directory_traversal",
-                        title=f"Path Traversal / Local File Inclusion",
-                        description=f"The parameter '{param}' allows reading arbitrary files from the server filesystem. "
-                                    f"The file '{target_file}' was successfully accessed via directory traversal sequences.",
-                        affected_url=target.url, severity="HIGH",
-                        affected_parameter=param, injection_point=source,
-                        payload=payload,
-                        request_evidence=f"{source.upper()} '{param}' = {payload}",
-                        response_evidence=evidence.strip()[:200],
-                        remediation="Never use user input to construct file paths. Use allowlists of permitted files. "
-                                    "Canonicalize paths and verify they stay within the intended directory.",
-                        remediation_code=json.dumps({
-                            "vulnerableCode": f"open(f'templates/{{request.{param}}}')",
-                            "remediatedCode": f"import os\\nbase = os.path.realpath('templates')\\npath = os.path.realpath(os.path.join(base, request.{param}))\\nif not path.startswith(base): raise ValueError('Invalid path')\\nopen(path)",
-                            "explanation": "Path canonicalization + prefix check ensures the resolved path stays within the allowed directory.",
-                            "language": "Python",
-                        }),
-                        confidence=95,
-                        business_impact="Sensitive file disclosure including credentials, configuration files, and source code.",
-                    ))
-                    break
+                if resp is None:
+                    continue
+                match = re.search(detect_pattern, resp.text)
+                if not match:
+                    continue
+
+                # Verification
+                verify = await self._inject(target, param, payload, source)
+                if verify is None or not re.search(detect_pattern, verify.text):
+                    continue
+
+                evidence = resp.text[max(0, match.start() - 30):match.end() + 50]
+                findings.append(RawFinding(
+                    vuln_type="directory_traversal",
+                    title="Path Traversal / Local File Inclusion",
+                    description=(
+                        f"The parameter '{param}' allows reading arbitrary files from the server filesystem. "
+                        f"The file '{target_file}' was successfully accessed. Content was NOT present in baseline."
+                    ),
+                    affected_url=target.url, severity="HIGH",
+                    affected_parameter=param, injection_point=source, payload=payload,
+                    request_evidence=f"{source.upper()} '{param}' = {payload}",
+                    response_evidence=evidence.strip()[:200],
+                    remediation=(
+                        "Never use user input to construct file paths. Use allowlists of permitted files. "
+                        "Canonicalize paths and verify they stay within the intended directory."
+                    ),
+                    remediation_code=json.dumps({
+                        "vulnerableCode": f"open(f'templates/{{request.{param}}}')",
+                        "remediatedCode": f"import os\\nbase = os.path.realpath('templates')\\npath = os.path.realpath(os.path.join(base, request.{param}))\\nassert path.startswith(base)\\nopen(path)",
+                        "explanation": "Path canonicalization + prefix check ensures the resolved path stays within the allowed directory.",
+                        "language": "Python",
+                    }),
+                    confidence=95, verified=True,
+                    business_impact="Sensitive file disclosure including credentials, configuration files, and source code.",
+                ))
+                break
         return findings
 
     async def _inject(self, target, param, payload, source):
