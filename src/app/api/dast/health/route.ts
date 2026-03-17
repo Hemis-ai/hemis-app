@@ -1,21 +1,22 @@
 import { NextResponse } from 'next/server'
 import { isDatabaseReachable } from '@/lib/db'
+import { isDastEngineRunning, DAST_ENGINE_URL } from '@/lib/dast/engine-proxy'
 
 export async function GET() {
-  const dbOk = await isDatabaseReachable()
+  const [dbOk, engineOk] = await Promise.all([
+    isDatabaseReachable(),
+    isDastEngineRunning(),
+  ])
 
-  let zapOk = false
-  try {
-    const zapUrl = process.env.ZAP_URL || 'http://localhost:8090'
-    const res = await fetch(`${zapUrl}/JSON/core/view/version/`, { signal: AbortSignal.timeout(5000) })
-    zapOk = res.ok
-  } catch { /* ZAP not running */ }
-
-  const status = dbOk ? 'healthy' : 'degraded'
+  const status = engineOk || dbOk ? 'healthy' : 'degraded'
 
   return NextResponse.json({
     status,
-    services: { database: dbOk ? 'connected' : 'disconnected', zap: zapOk ? 'connected' : 'disconnected' },
+    services: {
+      database: dbOk ? 'connected' : 'disconnected',
+      dastEngine: engineOk ? 'connected' : 'disconnected',
+      dastEngineUrl: DAST_ENGINE_URL,
+    },
     timestamp: new Date().toISOString(),
   }, { status: status === 'healthy' ? 200 : 503 })
 }

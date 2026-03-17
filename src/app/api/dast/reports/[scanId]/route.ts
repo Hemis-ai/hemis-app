@@ -6,6 +6,7 @@ import { renderReport } from '@/lib/dast/reports/html-template'
 import { generateJsonReport } from '@/lib/dast/reports/json-exporter'
 import { generateCsvReport } from '@/lib/dast/reports/csv-exporter'
 import { MOCK_DAST_SCANS, MOCK_DAST_FINDINGS } from '@/lib/mock-data/dast'
+import { isDastEngineRunning, proxyToEngine } from '@/lib/dast/engine-proxy'
 
 /**
  * Build ReportData from mock data when the database is not available.
@@ -113,6 +114,7 @@ function generateMockReport(scanId: string, format: ReportFormat): GeneratedRepo
 
 /**
  * POST /api/dast/reports/:scanId — Generate a report (PDF/JSON/CSV)
+ * Routes to Python engine for real PDF generation when available.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ scanId: string }> }) {
   try {
@@ -124,14 +126,45 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sca
       return NextResponse.json({ error: 'Invalid format. Use pdf, json, or csv.' }, { status: 400 })
     }
 
-    const dbOk = await isDatabaseReachable()
+    // Try Python engine first — generates real PDF with ReportLab
+    const engineOk = await isDastEngineRunning()
+    if (engineOk) {
+      const engineRes = await proxyToEngine(`/api/dast/reports/${scanId}`, {
+        method: 'POST',
+        body: JSON.stringify({ format }),
+        timeout: 60000,
+      })
+      if (engineRes?.ok) {
+        if (format === 'pdf') {
+          const pdfBuffer = await engineRes.arrayBuffer()
+          return new NextResponse(pdfBuffer, {
+            headers: {
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': `attachment; filename="hemisx-dast-${scanId.substring(0, 8)}-report.pdf"`,
+            },
+          })
+        }
+        if (format === 'csv') {
+          const csvText = await engineRes.text()
+          return new NextResponse(csvText, {
+            headers: {
+              'Content-Type': 'text/csv',
+              'Content-Disposition': `attachment; filename="hemisx-dast-${scanId.substring(0, 8)}-report.csv"`,
+            },
+          })
+        }
+        // JSON
+        const data = await engineRes.json()
+        return NextResponse.json(data)
+      }
+    }
 
-    // Use database when available, fall back to mock data otherwise
+    // Fallback to existing report generation
+    const dbOk = await isDatabaseReachable()
     const report = dbOk
       ? await generateReport(scanId, format)
       : generateMockReport(scanId, format)
 
-    // Return the report content directly for download
     if (format === 'json' || format === 'csv') {
       return new NextResponse(report.content as string, {
         headers: {
@@ -141,7 +174,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sca
       })
     }
 
-    // For PDF, return HTML that can be printed/saved as PDF
+    // For PDF fallback, return HTML that can be printed/saved as PDF
     return new NextResponse(report.content as string, {
       headers: {
         'Content-Type': 'text/html',

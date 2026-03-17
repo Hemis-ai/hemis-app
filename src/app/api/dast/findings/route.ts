@@ -1,14 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, isDatabaseReachable } from '@/lib/db'
+import { isDastEngineRunning, proxyToEngine } from '@/lib/dast/engine-proxy'
 
 /**
  * GET /api/dast/findings?scanId=xxx — List findings for a scan
+ * Proxies to Python engine when available for real findings.
  */
 export async function GET(req: NextRequest) {
   try {
     const scanId = req.nextUrl.searchParams.get('scanId')
     if (!scanId) return NextResponse.json({ error: 'scanId is required' }, { status: 400 })
 
+    // Try Python engine first
+    const engineOk = await isDastEngineRunning()
+    if (engineOk) {
+      const params = req.nextUrl.searchParams.toString()
+      const engineRes = await proxyToEngine(`/api/dast/findings?${params}`)
+      if (engineRes?.ok) {
+        const data = await engineRes.json()
+        return NextResponse.json(data)
+      }
+    }
+
+    // Fallback to DB
     const dbOk = await isDatabaseReachable()
     if (!dbOk) {
       return NextResponse.json({ findings: [], pagination: { page: 1, pageSize: 50, total: 0, totalPages: 0 }, demo: true })

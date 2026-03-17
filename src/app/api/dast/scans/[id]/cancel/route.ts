@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, isDatabaseReachable } from '@/lib/db'
 import { clearProgress } from '@/lib/dast/scan-orchestrator'
+import { isDastEngineRunning, proxyToEngine } from '@/lib/dast/engine-proxy'
 
 /**
  * POST /api/dast/scans/:id/cancel — Cancel a running/queued scan
@@ -9,6 +10,17 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   try {
     const { id } = await params
 
+    // Try Python engine first
+    const engineOk = await isDastEngineRunning()
+    if (engineOk) {
+      const engineRes = await proxyToEngine(`/api/dast/scans/${id}/cancel`, { method: 'POST' })
+      if (engineRes?.ok) {
+        const data = await engineRes.json()
+        return NextResponse.json(data)
+      }
+    }
+
+    // Fallback to DB
     const dbOk = await isDatabaseReachable()
     if (!dbOk) return NextResponse.json({ error: 'Database not available' }, { status: 503 })
 
@@ -31,9 +43,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       },
     })
 
-    // Clean up in-memory progress
     clearProgress(id)
-
     return NextResponse.json({ scan: updated })
   } catch (error) {
     console.error('POST /api/dast/scans/:id/cancel error:', error)

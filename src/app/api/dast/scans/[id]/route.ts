@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma, isDatabaseReachable } from '@/lib/db'
 import { getProgress } from '@/lib/dast/scan-orchestrator'
 import { MOCK_DAST_SCANS } from '@/lib/mock-data/dast'
+import { isDastEngineRunning, proxyToEngine } from '@/lib/dast/engine-proxy'
 
 /**
  * GET /api/dast/scans/:id — Get scan details + progress
@@ -9,8 +10,19 @@ import { MOCK_DAST_SCANS } from '@/lib/mock-data/dast'
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    const dbOk = await isDatabaseReachable()
 
+    // Try Python engine first
+    const engineOk = await isDastEngineRunning()
+    if (engineOk) {
+      const engineRes = await proxyToEngine(`/api/dast/scans/${id}`)
+      if (engineRes?.ok) {
+        const data = await engineRes.json()
+        return NextResponse.json(data)
+      }
+    }
+
+    // Fallback to DB/mock
+    const dbOk = await isDatabaseReachable()
     if (!dbOk) {
       const mock = MOCK_DAST_SCANS.find((s) => s.id === id)
       if (!mock) return NextResponse.json({ error: 'Scan not found' }, { status: 404 })
@@ -37,6 +49,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+
+    // Try Python engine first
+    const engineOk = await isDastEngineRunning()
+    if (engineOk) {
+      const engineRes = await proxyToEngine(`/api/dast/scans/${id}`, { method: 'DELETE' })
+      if (engineRes?.ok) {
+        return NextResponse.json({ success: true })
+      }
+    }
+
+    // Fallback to DB
     const scan = await prisma.dastScan.findUnique({ where: { id } })
     if (!scan) return NextResponse.json({ error: 'Scan not found' }, { status: 404 })
     if (['RUNNING', 'QUEUED'].includes(scan.status)) {

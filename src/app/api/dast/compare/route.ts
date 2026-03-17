@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { isDatabaseReachable, prisma } from '@/lib/db'
 import { compareScans, type ScanComparisonInput } from '@/lib/dast/comparison/scan-comparator'
 import { MOCK_DAST_SCANS, MOCK_DAST_FINDINGS } from '@/lib/mock-data/dast'
+import { isDastEngineRunning, proxyToEngine } from '@/lib/dast/engine-proxy'
 
 /**
  * POST /api/dast/compare — Compare two DAST scans
@@ -18,6 +19,19 @@ export async function POST(req: NextRequest) {
 
     if (baselineScanId === currentScanId) {
       return NextResponse.json({ error: 'Cannot compare a scan with itself' }, { status: 400 })
+    }
+
+    // Try Python engine first
+    const engineOk = await isDastEngineRunning()
+    if (engineOk) {
+      const engineRes = await proxyToEngine('/api/dast/compare', {
+        method: 'POST',
+        body: JSON.stringify({ baselineScanId, currentScanId }),
+      })
+      if (engineRes?.ok) {
+        const data = await engineRes.json()
+        return NextResponse.json(data)
+      }
     }
 
     const dbOk = await isDatabaseReachable()
