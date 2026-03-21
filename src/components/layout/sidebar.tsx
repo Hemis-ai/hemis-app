@@ -8,6 +8,8 @@ import { useState } from 'react'
 const FF = {
   sast:      process.env.NEXT_PUBLIC_FEATURE_SAST      !== 'false',
   dast:      process.env.NEXT_PUBLIC_FEATURE_DAST      !== 'false',
+  wbrt:      process.env.NEXT_PUBLIC_FEATURE_WBRT      !== 'false',
+  bbrt:      process.env.NEXT_PUBLIC_FEATURE_BBRT      !== 'false',
   blueteam:  process.env.NEXT_PUBLIC_FEATURE_BLUETEAM  !== 'false',
   scanner:   process.env.NEXT_PUBLIC_FEATURE_SCANNER   !== 'false',
 }
@@ -29,6 +31,8 @@ const PRODUCTS = [
     children: [
       ...(FF.sast ? [{ id: 'sast', label: 'SAST', href: '/dashboard/hemis/sast', icon: '⬡', color: 'var(--color-hemis)' }] : []),
       ...(FF.dast ? [{ id: 'dast', label: 'DAST', href: '/dashboard/hemis/dast', icon: '◇', color: 'var(--color-dast)' }] : []),
+      ...(FF.wbrt ? [{ id: 'wbrt', label: 'WHITE BOX RT', href: '/dashboard/hemis/wbrt', icon: '◉', color: 'var(--color-wbrt)' }] : []),
+      ...(FF.bbrt ? [{ id: 'bbrt', label: 'BLACK BOX RT', href: '/dashboard/hemis/bbrt', icon: '◌', color: 'var(--color-bbrt)' }] : []),
     ],
   },
   ...(FF.blueteam ? [{

@@ -10,6 +10,8 @@ const PAGE_META: Record<string, { title: string; product: string; color: string;
   '/dashboard/hemis':     { title:'HEMIS',         product:'AI Red Team',     color:'var(--color-hemis)',    breadcrumb:'/ hemis'          },
   '/dashboard/hemis/sast': { title:'SAST',          product:'Static Analysis', color:'var(--color-hemis)',    breadcrumb:'/ hemis / sast'    },
   '/dashboard/hemis/dast': { title:'DAST',          product:'Web App Security', color:'var(--color-dast)',     breadcrumb:'/ hemis / dast'    },
+  '/dashboard/hemis/wbrt': { title:'WHITE BOX RT',  product:'White Box Red Teaming', color:'var(--color-wbrt)',  breadcrumb:'/ hemis / wbrt'    },
+  '/dashboard/hemis/bbrt': { title:'BLACK BOX RT',  product:'Black Box Red Teaming', color:'var(--color-bbrt)',  breadcrumb:'/ hemis / bbrt'    },
   '/dashboard/blueteam':  { title:'BLUE TEAM',     product:'Threat Response', color:'var(--color-blueteam)', breadcrumb:'/ blue-team'      },
 }
 
@@ -47,7 +49,7 @@ export default function Topbar() {
   const [showToolsDropdown, setShowToolsDropdown] = useState(false)
 
   // Determine active product (SAST and DAST are sub-products of HEMIS)
-  const effectivePath = (path.startsWith('/dashboard/hemis/sast') || path.startsWith('/dashboard/hemis/dast')) ? '/dashboard/hemis' : path
+  const effectivePath = (path.startsWith('/dashboard/hemis/sast') || path.startsWith('/dashboard/hemis/dast') || path.startsWith('/dashboard/hemis/wbrt') || path.startsWith('/dashboard/hemis/bbrt')) ? '/dashboard/hemis' : path
   const activeProduct = PRODUCTS.find(p => effectivePath.startsWith(`/dashboard/${p.id}`))
   const tools = activeProduct ? PRODUCT_TOOLS[activeProduct.id as keyof typeof PRODUCT_TOOLS] : []
 
