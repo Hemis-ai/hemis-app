@@ -1940,7 +1940,108 @@ export default function WbrtPage() {
           {/* Export buttons */}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginBottom: 8 }}>
             <button
-              onClick={() => {/* placeholder */}}
+              onClick={() => {
+                const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>WBRT Report — ${MOCK_WBRT_ENGAGEMENT.name}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; color: #111; background: #fff; padding: 40px; font-size: 13px; }
+    h1 { font-size: 24px; margin-bottom: 4px; }
+    h2 { font-size: 16px; margin: 28px 0 10px; border-bottom: 2px solid #333; padding-bottom: 4px; }
+    h3 { font-size: 13px; margin: 16px 0 6px; }
+    .meta { color: #666; font-size: 11px; margin-bottom: 24px; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
+    .critical { background: #fee2e2; color: #b91c1c; }
+    .high { background: #ffedd5; color: #c2410c; }
+    .medium { background: #fef9c3; color: #a16207; }
+    .low { background: #dbeafe; color: #1d4ed8; }
+    .score { font-size: 48px; font-weight: bold; color: #b91c1c; }
+    .stats { display: flex; gap: 24px; margin: 16px 0; }
+    .stat { text-align: center; }
+    .stat-val { font-size: 28px; font-weight: bold; }
+    .stat-lbl { font-size: 10px; color: #666; text-transform: uppercase; }
+    table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+    th { background: #f3f4f6; padding: 8px 10px; text-align: left; font-size: 11px; text-transform: uppercase; }
+    td { padding: 8px 10px; border-bottom: 1px solid #e5e7eb; font-size: 12px; }
+    .fail { color: #b91c1c; font-weight: bold; }
+    .partial { color: #c2410c; font-weight: bold; }
+    .pass { color: #15803d; font-weight: bold; }
+    .roadmap-item { border: 1px solid #e5e7eb; border-radius: 6px; padding: 14px; margin-bottom: 10px; }
+    .roadmap-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .num { width: 28px; height: 28px; background: #111; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; flex-shrink: 0; }
+    p { line-height: 1.6; margin: 6px 0; }
+    ul { padding-left: 20px; margin: 6px 0; }
+    li { margin: 3px 0; }
+    @media print { body { padding: 20px; } }
+  </style>
+</head>
+<body>
+  <h1>White Box Red Team Report</h1>
+  <div class="meta">
+    Engagement: ${MOCK_WBRT_ENGAGEMENT.name} &nbsp;·&nbsp;
+    Generated: ${new Date(report.generatedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} &nbsp;·&nbsp;
+    Status: COMPLETED
+  </div>
+
+  <h2>Risk Score</h2>
+  <div class="score">${report.overallRiskScore}<span style="font-size:20px;color:#666">/100</span></div>
+  <div class="stats">
+    <div class="stat"><div class="stat-val">${report.attackPathCount}</div><div class="stat-lbl">Attack Paths</div></div>
+    <div class="stat"><div class="stat-val">${report.killChainCount}</div><div class="stat-lbl">Kill Chains</div></div>
+    <div class="stat"><div class="stat-val">${findings.filter(f => f.severity === 'CRITICAL').length}</div><div class="stat-lbl">Critical</div></div>
+    <div class="stat"><div class="stat-val">${findings.filter(f => f.severity === 'HIGH').length}</div><div class="stat-lbl">High</div></div>
+  </div>
+
+  <h2>Executive Summary</h2>
+  ${report.executiveSummary
+    .split('\n')
+    .map(line => {
+      if (line.startsWith('## ')) return `<h3>${line.slice(3)}</h3>`
+      if (line.startsWith('- ')) return `<li>${line.slice(2).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}</li>`
+      if (line.trim() === '' || line.trim() === '---') return '<br/>'
+      return `<p>${line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}</p>`
+    })
+    .join('\n')}
+
+  <h2>Compliance Gaps</h2>
+  <table>
+    <thead><tr><th>Framework</th><th>Control ID</th><th>Control Name</th><th>Status</th></tr></thead>
+    <tbody>
+      ${report.complianceGaps.map(g => `
+        <tr>
+          <td>${g.framework}</td>
+          <td style="font-family:monospace">${g.controlId}</td>
+          <td>${g.controlName}</td>
+          <td class="${g.status.toLowerCase()}">${g.status}</td>
+        </tr>`).join('')}
+    </tbody>
+  </table>
+
+  <h2>Remediation Roadmap</h2>
+  ${report.remediationRoadmap.map(item => `
+    <div class="roadmap-item">
+      <div class="roadmap-header">
+        <div class="num">${item.priority}</div>
+        <strong>${item.title}</strong>
+        <span class="badge">${item.effort} effort</span>
+        <span class="badge">${item.impact} impact</span>
+        <span style="font-size:11px;color:#666;margin-left:auto">${item.estimatedHours}h</span>
+      </div>
+      <p style="color:#444;font-size:12px">${item.description}</p>
+    </div>`).join('')}
+</body>
+</html>`
+                const win = window.open('', '_blank')
+                if (win) {
+                  win.document.write(html)
+                  win.document.close()
+                  win.focus()
+                  setTimeout(() => win.print(), 500)
+                }
+              }}
               style={{
                 padding: '10px 24px', fontSize: 11, fontFamily: 'var(--font-mono)',
                 letterSpacing: '0.1em', cursor: 'pointer',
@@ -1951,7 +2052,24 @@ export default function WbrtPage() {
               EXPORT PDF
             </button>
             <button
-              onClick={() => {/* placeholder */}}
+              onClick={() => {
+                const payload = {
+                  engagement: MOCK_WBRT_ENGAGEMENT,
+                  report,
+                  attackGraph,
+                  killChains,
+                  findings,
+                  exportedAt: new Date().toISOString(),
+                  version: '1.0',
+                }
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `wbrt-report-${MOCK_WBRT_ENGAGEMENT.name.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().slice(0,10)}.json`
+                a.click()
+                URL.revokeObjectURL(url)
+              }}
               style={{
                 padding: '10px 24px', fontSize: 11, fontFamily: 'var(--font-mono)',
                 letterSpacing: '0.1em', cursor: 'pointer',
