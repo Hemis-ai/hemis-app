@@ -7,6 +7,7 @@ import re
 import json
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from ..base_plugin import BasePlugin, ScanTarget, RawFinding
+from ..scan_context import ScanContext
 
 SSRF_PAYLOADS = [
     # AWS metadata
@@ -30,7 +31,7 @@ class SSRFPlugin(BasePlugin):
     name = "SSRF Scanner"
     vuln_type = "ssrf"
 
-    async def scan(self, target: ScanTarget) -> list[RawFinding]:
+    async def scan(self, target: ScanTarget, ctx: ScanContext) -> list[RawFinding]:
         findings: list[RawFinding] = []
         test_params = [(p, "query") for p in target.parameters]
         test_params += [(f["name"], "form") for f in target.form_fields if f.get("name")]
@@ -40,12 +41,12 @@ class SSRFPlugin(BasePlugin):
 
         for param, source in test_params:
             # Baseline
-            baseline = await self._inject(target, param, "https://example.com", source)
+            baseline = await self._inject(ctx, target, param, "https://example.com", source)
             if baseline is None:
                 continue
 
             for payload_url, detect_patterns, service_name in SSRF_PAYLOADS:
-                resp = await self._inject(target, param, payload_url, source)
+                resp = await self._inject(ctx, target, param, payload_url, source)
                 if resp is None:
                     continue
 
@@ -58,7 +59,7 @@ class SSRFPlugin(BasePlugin):
                         continue
 
                     # Verification
-                    verify = await self._inject(target, param, payload_url, source)
+                    verify = await self._inject(ctx, target, param, payload_url, source)
                     if verify is None or not re.search(pattern, verify.text, re.IGNORECASE):
                         continue
 
@@ -94,14 +95,14 @@ class SSRFPlugin(BasePlugin):
                 break
         return findings
 
-    async def _inject(self, target, param, payload, source):
+    async def _inject(self, ctx, target, param, payload, source):
         if source == "query":
             parsed = urlparse(target.url)
             qs = parse_qs(parsed.query, keep_blank_values=True)
             qs[param] = [payload]
             url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
-            return await self._send_request(url, headers=target.headers, cookies=target.cookies)
+            return await self._send_request(ctx, url, headers=target.headers, cookies=target.cookies)
         else:
             data = {f["name"]: f.get("value", "") for f in target.form_fields}
             data[param] = payload
-            return await self._send_request(target.url, method="POST", data=data, headers=target.headers, cookies=target.cookies)
+            return await self._send_request(ctx, target.url, method="POST", data=data, headers=target.headers, cookies=target.cookies)

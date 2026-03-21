@@ -66,7 +66,7 @@ class ScanRunner:
 
             # Phase 4: Extraction (85-90%)
             self._update_progress(85, "extracting", f"Processing {len(raw_findings)} findings...")
-            findings = self._phase_extract(raw_findings)
+            findings = await self._phase_extract(raw_findings)
 
             # Phase 5-6: Analysis (90-98%)
             self._update_progress(90, "analyzing", "Generating executive summary...")
@@ -209,6 +209,8 @@ class ScanRunner:
             )
 
         scanner = Scanner(
+            scan_id=self.scan_id,
+            target_url=self.config.targetUrl,
             crawl_result=crawl_result,
             profile=self.config.scanProfile.value,
             auth_headers=self.auth_headers,
@@ -221,7 +223,7 @@ class ScanRunner:
 
         return raw_findings
 
-    def _phase_extract(self, raw_findings: list[RawFinding]) -> list[Finding]:
+    async def _phase_extract(self, raw_findings: list[RawFinding]) -> list[Finding]:
         """Phase 4: Convert raw findings to scored Finding objects."""
         findings: list[Finding] = []
 
@@ -260,7 +262,7 @@ class ScanRunner:
             )
             findings.append(finding)
 
-        store.add_findings(self.scan_id, findings)
+        await store.add_findings(self.scan_id, findings)
         return findings
 
     def _phase_analyze(self, findings: list[Finding], crawl_result: CrawlResult):

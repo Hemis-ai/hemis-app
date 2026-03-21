@@ -18,7 +18,7 @@ export interface GeneratedReport {
 
 // ─── Build Report Data ──────────────────────────────────────────────────────
 
-export async function buildReportData(scanId: string): Promise<ReportData> {
+export async function buildReportData(scanId: string, orgId?: string): Promise<ReportData> {
   const scan = await prisma.dastScan.findUnique({
     where: { id: scanId },
     include: {
@@ -29,6 +29,7 @@ export async function buildReportData(scanId: string): Promise<ReportData> {
   })
 
   if (!scan) throw new Error(`Scan ${scanId} not found`)
+  if (orgId && scan.orgId !== orgId) throw new Error(`Scan ${scanId} not found`)
   if (scan.status !== 'COMPLETED') throw new Error('Report can only be generated for completed scans')
 
   const total =
@@ -87,8 +88,8 @@ export async function buildReportData(scanId: string): Promise<ReportData> {
 
 // ─── Generate Report ────────────────────────────────────────────────────────
 
-export async function generateReport(scanId: string, format: ReportFormat): Promise<GeneratedReport> {
-  const data = await buildReportData(scanId)
+export async function generateReport(scanId: string, format: ReportFormat, orgId?: string): Promise<GeneratedReport> {
+  const data = await buildReportData(scanId, orgId)
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
 
   switch (format) {

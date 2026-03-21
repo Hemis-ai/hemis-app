@@ -1,5 +1,6 @@
-"""In-memory storage for scans and findings."""
+"""In-memory storage for scans and findings — with asyncio lock for safe concurrent access."""
 from __future__ import annotations
+import asyncio
 from typing import Optional
 from ..models.scan import ScanResponse, ScanStatus
 from ..models.finding import Finding
@@ -7,9 +8,14 @@ from ..models.progress import ScanProgressEvent
 
 
 class ScanStore:
-    """Thread-safe in-memory store for scans, findings, and progress."""
+    """Thread-safe in-memory store for scans, findings, and progress.
+
+    The asyncio.Lock prevents TOCTOU races when multiple concurrent scans
+    call add_findings() simultaneously.
+    """
 
     def __init__(self):
+        self._lock = asyncio.Lock()
         self.scans: dict[str, ScanResponse] = {}
         self.findings: dict[str, list[Finding]] = {}  # scan_id -> findings
         self.progress: dict[str, ScanProgressEvent] = {}
@@ -36,10 +42,12 @@ class ScanStore:
                     setattr(scan, key, value)
         return scan
 
-    def add_findings(self, scan_id: str, new_findings: list[Finding]):
-        if scan_id not in self.findings:
-            self.findings[scan_id] = []
-        self.findings[scan_id].extend(new_findings)
+    async def add_findings(self, scan_id: str, new_findings: list[Finding]):
+        """Add findings under asyncio lock to prevent TOCTOU race."""
+        async with self._lock:
+            if scan_id not in self.findings:
+                self.findings[scan_id] = []
+            self.findings[scan_id].extend(new_findings)
 
     def get_findings(self, scan_id: str) -> list[Finding]:
         return self.findings.get(scan_id, [])

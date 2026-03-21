@@ -2,13 +2,14 @@
 from __future__ import annotations
 import re
 from ..base_plugin import BasePlugin, ScanTarget, RawFinding
+from ..scan_context import ScanContext
 
 
 class CookieAnalysisPlugin(BasePlugin):
     name = "Cookie Security Analyzer"
     vuln_type = "insecure_cookie"
 
-    async def scan(self, target: ScanTarget) -> list[RawFinding]:
+    async def scan(self, target: ScanTarget, ctx: ScanContext) -> list[RawFinding]:
         findings: list[RawFinding] = []
         set_cookies = []
 

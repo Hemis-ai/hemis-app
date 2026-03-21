@@ -1,25 +1,27 @@
 """
 Main scanner orchestrator — runs all plugins against discovered endpoints.
 
-Improvements over naive scanning:
-1. Populates response_body and content_type on ScanTargets for passive analysis
-2. Runs passive plugins only on unique domains (not per-URL duplicates)
-3. Cleans up shared HTTP client pool after scan
-4. Resets per-scan state (e.g., header dedup tracking)
+Each Scanner instance creates its own ScanContext with:
+  - Per-scan HTTP client (no shared global pool)
+  - Per-scan domain dedup sets (no module-level globals)
+  - Automatic cleanup in try/finally
+
+This ensures 100% isolation between concurrent scan jobs.
 """
 from __future__ import annotations
 import asyncio
 from typing import Optional, Callable
-from .base_plugin import BasePlugin, ScanTarget, RawFinding, get_shared_client, close_shared_client
+from .base_plugin import BasePlugin, ScanTarget, RawFinding
+from .scan_context import ScanContext
 from .plugins.sqli import SQLiPlugin
 from .plugins.xss import XSSPlugin
 from .plugins.cmdi import CommandInjectionPlugin
 from .plugins.path_traversal import PathTraversalPlugin
 from .plugins.ssrf import SSRFPlugin
 from .plugins.open_redirect import OpenRedirectPlugin
-from .plugins.header_analysis import HeaderAnalysisPlugin, reset_reported_domains
+from .plugins.header_analysis import HeaderAnalysisPlugin
 from .plugins.cookie_analysis import CookieAnalysisPlugin
-from .plugins.cors import CORSPlugin, reset_cors_reported
+from .plugins.cors import CORSPlugin
 from .plugins.info_disclosure import InfoDisclosurePlugin
 from ..crawler.crawler import CrawlResult, FormTarget
 from ..config import settings
@@ -54,78 +56,82 @@ def get_plugins(profile: str = "full") -> list[BasePlugin]:
 class Scanner:
     def __init__(
         self,
+        scan_id: str,
+        target_url: str,
         crawl_result: CrawlResult,
         profile: str = "full",
         auth_headers: Optional[dict[str, str]] = None,
         auth_cookies: Optional[dict[str, str]] = None,
         on_progress: Optional[Callable[[int, int, int, str], None]] = None,
     ):
+        self.scan_id = scan_id
+        self.target_url = target_url
         self.crawl_result = crawl_result
         self.plugins = get_plugins(profile)
         self.auth_headers = auth_headers or {}
         self.auth_cookies = auth_cookies or {}
         self.on_progress = on_progress
         self.total_payloads = 0
+        # Per-scan context — holds all mutable state for THIS scan only
+        self.ctx = ScanContext(scan_id=scan_id, target_url=target_url)
 
     async def scan(self) -> list[RawFinding]:
         """Run all plugins against all discovered endpoints."""
         findings: list[RawFinding] = []
 
-        # Reset per-scan state
-        reset_reported_domains()
-        reset_cors_reported()
+        try:
+            targets = self._build_targets()
 
-        targets = self._build_targets()
+            # Fetch response bodies for passive analysis targets
+            await self._populate_response_bodies(targets)
 
-        # Fetch response bodies for passive analysis targets
-        await self._populate_response_bodies(targets)
+            total = len(targets)
+            tested = 0
 
-        total = len(targets)
-        tested = 0
+            passive_plugins = [p for p in self.plugins if isinstance(p, (HeaderAnalysisPlugin, CookieAnalysisPlugin, CORSPlugin, InfoDisclosurePlugin))]
+            active_plugins = [p for p in self.plugins if p not in passive_plugins]
 
-        passive_plugins = [p for p in self.plugins if isinstance(p, (HeaderAnalysisPlugin, CookieAnalysisPlugin, CORSPlugin, InfoDisclosurePlugin))]
-        active_plugins = [p for p in self.plugins if p not in passive_plugins]
-
-        # ── Passive scan (no injection, uses stored response data) ──
-        for target in targets:
-            for plugin in passive_plugins:
-                try:
-                    results = await plugin.scan(target)
-                    findings.extend(results)
-                    self.total_payloads += plugin.payloads_sent
-                except Exception:
-                    pass
-
-        # ── Active scan (injection-based, controlled concurrency) ──
-        semaphore = asyncio.Semaphore(settings.max_concurrent_requests)
-
-        async def scan_target(target: ScanTarget, idx: int):
-            nonlocal tested
-            target_findings = []
-            for plugin in active_plugins:
-                try:
-                    async with semaphore:
-                        results = await plugin.scan(target)
-                        target_findings.extend(results)
+            # ── Passive scan (no injection, uses stored response data) ──
+            for target in targets:
+                for plugin in passive_plugins:
+                    try:
+                        results = await plugin.scan(target, self.ctx)
+                        findings.extend(results)
                         self.total_payloads += plugin.payloads_sent
-                except Exception:
-                    pass
-            tested += 1
-            if self.on_progress:
-                self.on_progress(tested, total, self.total_payloads, f"Testing endpoint {tested}/{total}")
-            return target_findings
+                    except Exception:
+                        pass
 
-        batch_size = settings.max_concurrent_requests
-        for i in range(0, len(targets), batch_size):
-            batch = targets[i:i + batch_size]
-            tasks = [scan_target(t, i + j) for j, t in enumerate(batch)]
-            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
-            for result in batch_results:
-                if isinstance(result, list):
-                    findings.extend(result)
+            # ── Active scan (injection-based, controlled concurrency) ──
+            semaphore = asyncio.Semaphore(settings.max_concurrent_requests)
 
-        # Clean up shared client
-        await close_shared_client()
+            async def scan_target(target: ScanTarget, idx: int):
+                nonlocal tested
+                target_findings = []
+                for plugin in active_plugins:
+                    try:
+                        async with semaphore:
+                            results = await plugin.scan(target, self.ctx)
+                            target_findings.extend(results)
+                            self.total_payloads += plugin.payloads_sent
+                    except Exception:
+                        pass
+                tested += 1
+                if self.on_progress:
+                    self.on_progress(tested, total, self.total_payloads, f"Testing endpoint {tested}/{total}")
+                return target_findings
+
+            batch_size = settings.max_concurrent_requests
+            for i in range(0, len(targets), batch_size):
+                batch = targets[i:i + batch_size]
+                tasks = [scan_target(t, i + j) for j, t in enumerate(batch)]
+                batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+                for result in batch_results:
+                    if isinstance(result, list):
+                        findings.extend(result)
+
+        finally:
+            # Clean up per-scan HTTP client — only affects THIS scan
+            await self.ctx.close()
 
         # ── Deduplicate findings ──
         seen = set()
@@ -141,7 +147,7 @@ class Scanner:
     async def _populate_response_bodies(self, targets: list[ScanTarget]):
         """Fetch response bodies for targets that need passive analysis.
         This gives passive plugins (header analysis, DOM XSS) real response data."""
-        client = await get_shared_client()
+        client = await self.ctx.get_client()
         for target in targets:
             if target.response_body:
                 continue  # Already populated

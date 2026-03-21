@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, isDatabaseReachable } from '@/lib/db'
 import { MOCK_DAST_FINDINGS } from '@/lib/mock-data/dast'
+import { verifyAccessToken, ACCESS_COOKIE } from '@/lib/auth/jwt'
 
 /**
  * GET /api/dast/findings/:id — Get finding detail
@@ -21,6 +22,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       include: { scan: { select: { id: true, name: true, targetUrl: true, orgId: true } } },
     })
     if (!finding) return NextResponse.json({ error: 'Finding not found' }, { status: 404 })
+
+    // Verify org ownership
+    const token = _req.cookies.get(ACCESS_COOKIE)?.value
+    const payload = token ? await verifyAccessToken(token) : null
+    const orgId = payload?.orgId || 'org-demo'
+    if (finding.scan.orgId !== orgId) return NextResponse.json({ error: 'Finding not found' }, { status: 404 })
+
     return NextResponse.json({ finding })
   } catch (error) {
     console.error('GET /api/dast/findings/:id error:', error)
@@ -37,8 +45,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const body = await req.json()
     const { status, notes, isConfirmed } = body
 
-    const finding = await prisma.dastFinding.findUnique({ where: { id } })
+    const finding = await prisma.dastFinding.findUnique({ where: { id }, include: { scan: { select: { orgId: true } } } })
     if (!finding) return NextResponse.json({ error: 'Finding not found' }, { status: 404 })
+
+    // Verify org ownership
+    const token = req.cookies.get(ACCESS_COOKIE)?.value
+    const payload = token ? await verifyAccessToken(token) : null
+    const orgId = payload?.orgId || 'org-demo'
+    if (finding.scan.orgId !== orgId) return NextResponse.json({ error: 'Finding not found' }, { status: 404 })
 
     const updateData: Record<string, unknown> = {}
     if (status !== undefined) updateData.status = status

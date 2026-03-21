@@ -2,11 +2,14 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import httpx
 
 from ..config import settings
+
+if TYPE_CHECKING:
+    from .scan_context import ScanContext
 
 
 @dataclass
@@ -42,33 +45,6 @@ class RawFinding:
     verified: bool = False  # True = confirmed with verification request
 
 
-# Shared client pool — reuse connections like Burp does
-_client_pool: Optional[httpx.AsyncClient] = None
-
-
-async def get_shared_client() -> httpx.AsyncClient:
-    global _client_pool
-    if _client_pool is None or _client_pool.is_closed:
-        _client_pool = httpx.AsyncClient(
-            timeout=settings.request_timeout,
-            follow_redirects=False,
-            verify=False,
-            limits=httpx.Limits(
-                max_connections=settings.max_concurrent_requests * 2,
-                max_keepalive_connections=settings.max_concurrent_requests,
-            ),
-            headers={"User-Agent": settings.user_agent},
-        )
-    return _client_pool
-
-
-async def close_shared_client():
-    global _client_pool
-    if _client_pool and not _client_pool.is_closed:
-        await _client_pool.aclose()
-        _client_pool = None
-
-
 class BasePlugin(ABC):
     name: str = "base"
     vuln_type: str = "unknown"
@@ -77,11 +53,12 @@ class BasePlugin(ABC):
         self.payloads_sent = 0
 
     @abstractmethod
-    async def scan(self, target: ScanTarget) -> list[RawFinding]:
+    async def scan(self, target: ScanTarget, ctx: ScanContext) -> list[RawFinding]:
         ...
 
     async def _send_request(
         self,
+        ctx: ScanContext,
         url: str,
         method: str = "GET",
         params: Optional[dict] = None,
@@ -91,10 +68,10 @@ class BasePlugin(ABC):
         timeout: float = 0,
         follow_redirects: bool = False,
     ) -> Optional[httpx.Response]:
-        """Send an HTTP request using the shared connection pool."""
+        """Send an HTTP request using the per-scan connection pool."""
         self.payloads_sent += 1
         try:
-            client = await get_shared_client()
+            client = await ctx.get_client()
             req_headers = dict(client.headers)
             if headers:
                 req_headers.update(headers)

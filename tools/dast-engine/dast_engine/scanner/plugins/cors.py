@@ -1,28 +1,23 @@
 """
 CORS misconfiguration detection — reports once per domain.
+Domain dedup state is held in the per-scan ScanContext (not a module global).
 """
 from __future__ import annotations
 from urllib.parse import urlparse
 from ..base_plugin import BasePlugin, ScanTarget, RawFinding
-
-# Track reported domains to avoid duplicate CORS findings
-_cors_reported_domains: set[str] = set()
-
-
-def reset_cors_reported():
-    _cors_reported_domains.clear()
+from ..scan_context import ScanContext
 
 
 class CORSPlugin(BasePlugin):
     name = "CORS Misconfiguration Scanner"
     vuln_type = "cors_misconfiguration"
 
-    async def scan(self, target: ScanTarget) -> list[RawFinding]:
+    async def scan(self, target: ScanTarget, ctx: ScanContext) -> list[RawFinding]:
         findings: list[RawFinding] = []
 
-        # Only report CORS once per domain
+        # Only report CORS once per domain (scoped to THIS scan's context)
         domain = urlparse(target.url).netloc
-        if domain in _cors_reported_domains:
+        if domain in ctx.cors_reported_domains:
             return findings
 
         # Test with arbitrary Origin
@@ -33,6 +28,7 @@ class CORSPlugin(BasePlugin):
 
         for origin in test_origins:
             resp = await self._send_request(
+                ctx,
                 target.url,
                 headers={**target.headers, "Origin": origin},
                 cookies=target.cookies,
@@ -45,11 +41,12 @@ class CORSPlugin(BasePlugin):
 
             # Dangerous: reflects arbitrary origin
             if acao == origin:
-                _cors_reported_domains.add(domain)
+                ctx.cors_reported_domains.add(domain)
                 severity = "HIGH" if acac == "true" else "MEDIUM"
 
                 # Verification
                 verify = await self._send_request(
+                    ctx,
                     target.url,
                     headers={**target.headers, "Origin": origin},
                     cookies=target.cookies,
@@ -84,7 +81,7 @@ class CORSPlugin(BasePlugin):
 
             # Dangerous: wildcard with credentials
             if acao == "*" and acac == "true":
-                _cors_reported_domains.add(domain)
+                ctx.cors_reported_domains.add(domain)
                 findings.append(RawFinding(
                     vuln_type="cors_misconfiguration",
                     title="CORS Wildcard with Credentials",

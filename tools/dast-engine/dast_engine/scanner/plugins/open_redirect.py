@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from ..base_plugin import BasePlugin, ScanTarget, RawFinding
+from ..scan_context import ScanContext
 
 REDIRECT_PARAMS = {"url", "redirect", "next", "return", "goto", "to", "dest", "destination", "target", "redir", "return_to", "redirect_uri", "redirect_url", "continue", "forward"}
 REDIRECT_PAYLOADS = [
@@ -20,14 +21,14 @@ class OpenRedirectPlugin(BasePlugin):
     name = "Open Redirect Scanner"
     vuln_type = "open_redirect"
 
-    async def scan(self, target: ScanTarget) -> list[RawFinding]:
+    async def scan(self, target: ScanTarget, ctx: ScanContext) -> list[RawFinding]:
         findings: list[RawFinding] = []
         test_params = [(p, "query") for p in target.parameters if p.lower() in REDIRECT_PARAMS]
         test_params += [(f["name"], "form") for f in target.form_fields if f.get("name", "").lower() in REDIRECT_PARAMS]
 
         for param, source in test_params:
             for payload in REDIRECT_PAYLOADS:
-                resp = await self._inject(target, param, payload, source)
+                resp = await self._inject(ctx, target, param, payload, source)
                 if resp is None:
                     continue
                 location = resp.headers.get("location", "")
@@ -55,14 +56,14 @@ class OpenRedirectPlugin(BasePlugin):
                     break
         return findings
 
-    async def _inject(self, target, param, payload, source):
+    async def _inject(self, ctx, target, param, payload, source):
         if source == "query":
             parsed = urlparse(target.url)
             qs = parse_qs(parsed.query, keep_blank_values=True)
             qs[param] = [payload]
             url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
-            return await self._send_request(url, headers=target.headers, cookies=target.cookies)
+            return await self._send_request(ctx, url, headers=target.headers, cookies=target.cookies)
         else:
             data = {f["name"]: f.get("value", "") for f in target.form_fields}
             data[param] = payload
-            return await self._send_request(target.url, method="POST", data=data, headers=target.headers, cookies=target.cookies)
+            return await self._send_request(ctx, target.url, method="POST", data=data, headers=target.headers, cookies=target.cookies)

@@ -15,6 +15,7 @@ import uuid
 import html as html_mod
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from ..base_plugin import BasePlugin, ScanTarget, RawFinding
+from ..scan_context import ScanContext
 
 
 # Context-aware XSS payloads - each with a unique canary prefix for tracking
@@ -71,7 +72,7 @@ class XSSPlugin(BasePlugin):
     name = "XSS Scanner"
     vuln_type = "xss_reflected"
 
-    async def scan(self, target: ScanTarget) -> list[RawFinding]:
+    async def scan(self, target: ScanTarget, ctx: ScanContext) -> list[RawFinding]:
         findings: list[RawFinding] = []
 
         # Get testable parameters
@@ -87,7 +88,7 @@ class XSSPlugin(BasePlugin):
 
         # Test reflected XSS via parameter injection
         for param_name, param_source in test_params:
-            finding = await self._test_reflected(target, param_name, param_source)
+            finding = await self._test_reflected(ctx, target, param_name, param_source)
             if finding:
                 findings.append(finding)
 
@@ -99,7 +100,7 @@ class XSSPlugin(BasePlugin):
 
         return findings
 
-    async def _test_reflected(self, target: ScanTarget, param: str, source: str):
+    async def _test_reflected(self, ctx: ScanContext, target: ScanTarget, param: str, source: str):
         """
         Test for reflected XSS with Burp-level validation:
         1. Inject a unique canary string first (no special chars) — tests basic reflection
@@ -110,7 +111,7 @@ class XSSPlugin(BasePlugin):
         """
         # Phase 1: Probe with harmless canary to test reflection
         canary = f"HXS{uuid.uuid4().hex[:10]}"
-        probe_resp = await self._inject(target, param, canary, source)
+        probe_resp = await self._inject(ctx, target, param, canary, source)
         if probe_resp is None:
             return None
 
@@ -131,7 +132,7 @@ class XSSPlugin(BasePlugin):
             payload = xss["payload"].replace("{canary}", payload_canary)
             check_str = xss["check"].replace("{canary}", payload_canary)
 
-            resp = await self._inject(target, param, payload, source)
+            resp = await self._inject(ctx, target, param, payload, source)
             if resp is None:
                 continue
 
@@ -154,7 +155,7 @@ class XSSPlugin(BasePlugin):
             # ── CRITICAL CHECK #4: Verification request ──
             # Burp Suite confirms by sending the same payload again. Eliminates transient
             # false positives from cached responses, race conditions, etc.
-            verify_resp = await self._inject(target, param, payload, source)
+            verify_resp = await self._inject(ctx, target, param, payload, source)
             if verify_resp is None or check_str not in verify_resp.text:
                 continue
             if not self.is_html_response(verify_resp):
@@ -244,21 +245,21 @@ class XSSPlugin(BasePlugin):
 
         return "html_body"
 
-    async def _inject(self, target: ScanTarget, param: str, payload: str, source: str):
+    async def _inject(self, ctx: ScanContext, target: ScanTarget, param: str, payload: str, source: str):
         if source == "query":
             parsed = urlparse(target.url)
             qs = parse_qs(parsed.query, keep_blank_values=True)
             qs[param] = [payload]
             new_query = urlencode(qs, doseq=True)
             url = urlunparse(parsed._replace(query=new_query))
-            return await self._send_request(url, headers=target.headers, cookies=target.cookies)
+            return await self._send_request(ctx, url, headers=target.headers, cookies=target.cookies)
         else:
             form_data = {}
             for f in target.form_fields:
                 form_data[f["name"]] = f.get("value", "test")
             form_data[param] = payload
             return await self._send_request(
-                target.url, method="POST", data=form_data,
+                ctx, target.url, method="POST", data=form_data,
                 headers=target.headers, cookies=target.cookies,
             )
 

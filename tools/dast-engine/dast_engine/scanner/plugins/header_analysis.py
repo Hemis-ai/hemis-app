@@ -3,18 +3,13 @@ Security header analysis (passive — no injection).
 
 Reports missing security headers ONCE per domain, not per URL.
 Checks the response headers of the specific target URL.
+Domain dedup state is held in the per-scan ScanContext (not a module global).
 """
 from __future__ import annotations
+import re
 from urllib.parse import urlparse
 from ..base_plugin import BasePlugin, ScanTarget, RawFinding
-
-# Track which domains we've already reported for to avoid duplicates
-_reported_domains: set[str] = set()
-
-
-def reset_reported_domains():
-    """Reset between scans."""
-    _reported_domains.clear()
+from ..scan_context import ScanContext
 
 
 REQUIRED_HEADERS = [
@@ -74,14 +69,14 @@ class HeaderAnalysisPlugin(BasePlugin):
     name = "Security Header Analyzer"
     vuln_type = "security_headers"
 
-    async def scan(self, target: ScanTarget) -> list[RawFinding]:
+    async def scan(self, target: ScanTarget, ctx: ScanContext) -> list[RawFinding]:
         findings: list[RawFinding] = []
 
-        # Only report header issues once per domain
+        # Only report header issues once per domain (scoped to THIS scan's context)
         domain = urlparse(target.url).netloc
-        if domain in _reported_domains:
+        if domain in ctx.reported_domains:
             return findings
-        _reported_domains.add(domain)
+        ctx.reported_domains.add(domain)
 
         headers = {k.lower(): v for k, v in target.response_headers.items()}
         is_https = target.url.startswith("https://")
@@ -135,7 +130,3 @@ class HeaderAnalysisPlugin(BasePlugin):
             ))
 
         return findings
-
-
-# Need re for the server version check
-import re

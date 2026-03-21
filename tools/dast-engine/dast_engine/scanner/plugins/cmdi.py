@@ -9,6 +9,7 @@ import re
 import json
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from ..base_plugin import BasePlugin, ScanTarget, RawFinding
+from ..scan_context import ScanContext
 
 UNIX_PAYLOADS = [
     ("; id", r"uid=\d+\(\w+\)\s+gid=\d+"),
@@ -31,14 +32,14 @@ class CommandInjectionPlugin(BasePlugin):
     name = "Command Injection Scanner"
     vuln_type = "command_injection"
 
-    async def scan(self, target: ScanTarget) -> list[RawFinding]:
+    async def scan(self, target: ScanTarget, ctx: ScanContext) -> list[RawFinding]:
         findings: list[RawFinding] = []
         test_params = [(p, "query") for p in target.parameters]
         test_params += [(f["name"], "form") for f in target.form_fields if f.get("name")]
 
         for param, source in test_params:
             # Get baseline to check for pre-existing matches
-            baseline = await self._inject(target, param, "hemisxtest123", source)
+            baseline = await self._inject(ctx, target, param, "hemisxtest123", source)
             if baseline is None:
                 continue
             baseline_text = baseline.text
@@ -48,7 +49,7 @@ class CommandInjectionPlugin(BasePlugin):
                 if re.search(detect_pattern, baseline_text, re.IGNORECASE):
                     continue  # Pattern pre-exists — not caused by our injection
 
-                resp = await self._inject(target, param, payload, source)
+                resp = await self._inject(ctx, target, param, payload, source)
                 if resp is None:
                     continue
                 match = re.search(detect_pattern, resp.text, re.IGNORECASE)
@@ -56,7 +57,7 @@ class CommandInjectionPlugin(BasePlugin):
                     continue
 
                 # Verification request
-                verify = await self._inject(target, param, payload, source)
+                verify = await self._inject(ctx, target, param, payload, source)
                 if verify is None or not re.search(detect_pattern, verify.text, re.IGNORECASE):
                     continue
 
@@ -89,14 +90,14 @@ class CommandInjectionPlugin(BasePlugin):
                 break  # One finding per param
         return findings
 
-    async def _inject(self, target, param, payload, source):
+    async def _inject(self, ctx, target, param, payload, source):
         if source == "query":
             parsed = urlparse(target.url)
             qs = parse_qs(parsed.query, keep_blank_values=True)
             qs[param] = [payload]
             url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
-            return await self._send_request(url, headers=target.headers, cookies=target.cookies)
+            return await self._send_request(ctx, url, headers=target.headers, cookies=target.cookies)
         else:
             data = {f["name"]: f.get("value", "") for f in target.form_fields}
             data[param] = payload
-            return await self._send_request(target.url, method="POST", data=data, headers=target.headers, cookies=target.cookies)
+            return await self._send_request(ctx, target.url, method="POST", data=data, headers=target.headers, cookies=target.cookies)

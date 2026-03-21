@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse
 from ..base_plugin import BasePlugin, ScanTarget, RawFinding
+from ..scan_context import ScanContext
 
 SENSITIVE_PATHS = [
     ("/.env", [r"DB_PASSWORD\s*=", r"API_KEY\s*=", r"SECRET\s*=", r"AWS_ACCESS_KEY", r"DATABASE_URL\s*="], "Environment file"),
@@ -32,7 +33,7 @@ class InfoDisclosurePlugin(BasePlugin):
     name = "Information Disclosure Scanner"
     vuln_type = "information_disclosure"
 
-    async def scan(self, target: ScanTarget) -> list[RawFinding]:
+    async def scan(self, target: ScanTarget, ctx: ScanContext) -> list[RawFinding]:
         findings: list[RawFinding] = []
 
         # Check current page for error patterns (only on HTML pages)

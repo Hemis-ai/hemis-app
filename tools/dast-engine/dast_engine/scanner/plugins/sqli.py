@@ -13,6 +13,7 @@ import time
 import json
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from ..base_plugin import BasePlugin, ScanTarget, RawFinding
+from ..scan_context import ScanContext
 
 # Database error signatures for error-based SQLi detection
 DB_ERROR_PATTERNS = {
@@ -81,7 +82,7 @@ class SQLiPlugin(BasePlugin):
     name = "SQL Injection Scanner"
     vuln_type = "sql_injection"
 
-    async def scan(self, target: ScanTarget) -> list[RawFinding]:
+    async def scan(self, target: ScanTarget, ctx: ScanContext) -> list[RawFinding]:
         findings: list[RawFinding] = []
 
         test_params = self._get_params(target)
@@ -90,19 +91,19 @@ class SQLiPlugin(BasePlugin):
 
         for param_name, param_source in test_params:
             # Phase 1: Error-based detection (with baseline comparison)
-            finding = await self._test_error_based(target, param_name, param_source)
+            finding = await self._test_error_based(ctx, target, param_name, param_source)
             if finding:
                 findings.append(finding)
                 continue
 
             # Phase 2: Boolean-blind detection (statistical)
-            finding = await self._test_blind(target, param_name, param_source)
+            finding = await self._test_blind(ctx, target, param_name, param_source)
             if finding:
                 findings.append(finding)
                 continue
 
             # Phase 3: Time-based detection (with confirmation)
-            finding = await self._test_time_based(target, param_name, param_source)
+            finding = await self._test_time_based(ctx, target, param_name, param_source)
             if finding:
                 findings.append(finding)
 
@@ -116,20 +117,20 @@ class SQLiPlugin(BasePlugin):
             params.append((f.get("name", ""), "form"))
         return [(n, s) for n, s in params if n]
 
-    async def _inject(self, target: ScanTarget, param: str, payload: str, source: str):
+    async def _inject(self, ctx: ScanContext, target: ScanTarget, param: str, payload: str, source: str):
         if source == "query":
             parsed = urlparse(target.url)
             qs = parse_qs(parsed.query, keep_blank_values=True)
             qs[param] = [payload]
             new_query = urlencode(qs, doseq=True)
             url = urlunparse(parsed._replace(query=new_query))
-            return await self._send_request(url, method="GET", headers=target.headers, cookies=target.cookies)
+            return await self._send_request(ctx, url, method="GET", headers=target.headers, cookies=target.cookies)
         else:
             form_data = {}
             for f in target.form_fields:
                 form_data[f["name"]] = f.get("value", "test")
             form_data[param] = payload
-            return await self._send_request(target.url, method="POST", data=form_data, headers=target.headers, cookies=target.cookies)
+            return await self._send_request(ctx, target.url, method="POST", data=form_data, headers=target.headers, cookies=target.cookies)
 
     def _find_db_errors(self, text: str) -> list[tuple[str, str, re.Match]]:
         """Scan text for database error patterns. Returns [(db_type, pattern, match)]."""
@@ -141,14 +142,14 @@ class SQLiPlugin(BasePlugin):
                     results.append((db_type, pattern, match))
         return results
 
-    async def _test_error_based(self, target: ScanTarget, param: str, source: str):
+    async def _test_error_based(self, ctx: ScanContext, target: ScanTarget, param: str, source: str):
         """
         Error-based SQLi with baseline comparison:
         1. Send clean value → record which error patterns exist in baseline
         2. Send SQL metacharacter → check for NEW error patterns not in baseline
         """
         # Baseline: send a normal, non-malicious value
-        baseline = await self._inject(target, param, "hemisxtest123", source)
+        baseline = await self._inject(ctx, target, param, "hemisxtest123", source)
         if baseline is None:
             return None
 
@@ -158,7 +159,7 @@ class SQLiPlugin(BasePlugin):
             baseline_errors.add(pattern)
 
         for payload in ERROR_PAYLOADS:
-            resp = await self._inject(target, param, payload, source)
+            resp = await self._inject(ctx, target, param, payload, source)
             if resp is None:
                 continue
 
@@ -169,7 +170,7 @@ class SQLiPlugin(BasePlugin):
                 evidence = resp.text[max(0, match.start() - 50):match.end() + 50]
 
                 # Verification: inject again to confirm reproducibility
-                verify = await self._inject(target, param, payload, source)
+                verify = await self._inject(ctx, target, param, payload, source)
                 if verify is None:
                     continue
                 verify_match = re.search(pattern, verify.text, re.IGNORECASE)
@@ -211,12 +212,12 @@ class SQLiPlugin(BasePlugin):
                 )
         return None
 
-    async def _test_blind(self, target: ScanTarget, param: str, source: str):
+    async def _test_blind(self, ctx: ScanContext, target: ScanTarget, param: str, source: str):
         """Boolean-blind SQLi with statistical validation and repeated confirmation."""
         # Establish baseline variance with 3 requests
         baseline_lengths = []
         for _ in range(3):
-            resp = await self._inject(target, param, "hemisxtest123", source)
+            resp = await self._inject(ctx, target, param, "hemisxtest123", source)
             if resp is None:
                 return None
             baseline_lengths.append(len(resp.text))
@@ -226,8 +227,8 @@ class SQLiPlugin(BasePlugin):
         min_threshold = max(baseline_variance * 3, 200)
 
         for true_payload, false_payload in BLIND_PAIRS:
-            true_resp = await self._inject(target, param, f"hemisxtest123{true_payload}", source)
-            false_resp = await self._inject(target, param, f"hemisxtest123{false_payload}", source)
+            true_resp = await self._inject(ctx, target, param, f"hemisxtest123{true_payload}", source)
+            false_resp = await self._inject(ctx, target, param, f"hemisxtest123{false_payload}", source)
             if true_resp is None or false_resp is None:
                 continue
 
@@ -242,8 +243,8 @@ class SQLiPlugin(BasePlugin):
                 continue
 
             # Verification
-            v_true = await self._inject(target, param, f"hemisxtest123{true_payload}", source)
-            v_false = await self._inject(target, param, f"hemisxtest123{false_payload}", source)
+            v_true = await self._inject(ctx, target, param, f"hemisxtest123{true_payload}", source)
+            v_false = await self._inject(ctx, target, param, f"hemisxtest123{false_payload}", source)
             if v_true is None or v_false is None:
                 continue
             if abs(len(v_true.text) - len(v_false.text)) < min_threshold:
@@ -268,12 +269,12 @@ class SQLiPlugin(BasePlugin):
             )
         return None
 
-    async def _test_time_based(self, target: ScanTarget, param: str, source: str):
+    async def _test_time_based(self, ctx: ScanContext, target: ScanTarget, param: str, source: str):
         """Time-based blind SQLi with double-confirmation."""
         baseline_times = []
         for _ in range(3):
             start = time.time()
-            resp = await self._inject(target, param, "hemisxtest123", source)
+            resp = await self._inject(ctx, target, param, "hemisxtest123", source)
             baseline_times.append(time.time() - start)
             if resp is None:
                 return None
@@ -284,14 +285,14 @@ class SQLiPlugin(BasePlugin):
 
         for payload, db_type in TIME_PAYLOADS:
             start = time.time()
-            resp = await self._inject(target, param, f"hemisxtest123{payload}", source)
+            resp = await self._inject(ctx, target, param, f"hemisxtest123{payload}", source)
             elapsed = time.time() - start
             if resp is None or elapsed < time_threshold:
                 continue
 
             # Confirmation
             start2 = time.time()
-            resp2 = await self._inject(target, param, f"hemisxtest123{payload}", source)
+            resp2 = await self._inject(ctx, target, param, f"hemisxtest123{payload}", source)
             elapsed2 = time.time() - start2
             if resp2 is None or elapsed2 < time_threshold:
                 continue

@@ -197,6 +197,10 @@ export async function runDastScan(scanId: string): Promise<void> {
     console.error('DAST scan failed', { scanId, error: errorMsg })
     await prisma.dastScan.update({ where: { id: scanId }, data: { status: 'FAILED', currentPhase: 'failed', completedAt: new Date() } })
     emitProgress(scanId, 'FAILED', -1, 'failed', `Scan failed: ${errorMsg}`)
+  } finally {
+    // Clean up progress store to prevent unbounded memory growth.
+    // Allow a brief delay so any final SSE poll can read the terminal status.
+    setTimeout(() => clearProgress(scanId), 30_000)
   }
 }
 

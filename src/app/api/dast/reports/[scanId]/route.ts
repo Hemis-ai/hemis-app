@@ -7,6 +7,7 @@ import { generateJsonReport } from '@/lib/dast/reports/json-exporter'
 import { generateCsvReport } from '@/lib/dast/reports/csv-exporter'
 import { MOCK_DAST_SCANS, MOCK_DAST_FINDINGS } from '@/lib/mock-data/dast'
 import { isDastEngineRunning, proxyToEngine } from '@/lib/dast/engine-proxy'
+import { verifyAccessToken, ACCESS_COOKIE } from '@/lib/auth/jwt'
 
 /**
  * Build ReportData from mock data when the database is not available.
@@ -159,10 +160,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sca
       }
     }
 
+    // Extract orgId for tenant isolation
+    const token = req.cookies.get(ACCESS_COOKIE)?.value
+    const jwtPayload = token ? await verifyAccessToken(token) : null
+    const orgId = jwtPayload?.orgId || 'org-demo'
+
     // Fallback to existing report generation
     const dbOk = await isDatabaseReachable()
     const report = dbOk
-      ? await generateReport(scanId, format)
+      ? await generateReport(scanId, format, orgId)
       : generateMockReport(scanId, format)
 
     if (format === 'json' || format === 'csv') {

@@ -3,6 +3,7 @@ import { prisma, isDatabaseReachable } from '@/lib/db'
 import { getProgress } from '@/lib/dast/scan-orchestrator'
 import { MOCK_DAST_SCANS } from '@/lib/mock-data/dast'
 import { isDastEngineRunning, proxyToEngine } from '@/lib/dast/engine-proxy'
+import { verifyAccessToken, ACCESS_COOKIE } from '@/lib/auth/jwt'
 
 /**
  * GET /api/dast/scans/:id — Get scan details + progress
@@ -35,6 +36,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     })
     if (!scan) return NextResponse.json({ error: 'Scan not found' }, { status: 404 })
 
+    // Verify org ownership
+    const token = _req.cookies.get(ACCESS_COOKIE)?.value
+    const payload = token ? await verifyAccessToken(token) : null
+    const orgId = payload?.orgId || 'org-demo'
+    if (scan.orgId !== orgId) return NextResponse.json({ error: 'Scan not found' }, { status: 404 })
+
     const progress = getProgress(id)
     return NextResponse.json({ scan, progress: progress ?? null })
   } catch (error) {
@@ -62,6 +69,13 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     // Fallback to DB
     const scan = await prisma.dastScan.findUnique({ where: { id } })
     if (!scan) return NextResponse.json({ error: 'Scan not found' }, { status: 404 })
+
+    // Verify org ownership
+    const delToken = _req.cookies.get(ACCESS_COOKIE)?.value
+    const delPayload = delToken ? await verifyAccessToken(delToken) : null
+    const delOrgId = delPayload?.orgId || 'org-demo'
+    if (scan.orgId !== delOrgId) return NextResponse.json({ error: 'Scan not found' }, { status: 404 })
+
     if (['RUNNING', 'QUEUED'].includes(scan.status)) {
       return NextResponse.json({ error: `Cannot delete scan in ${scan.status} state` }, { status: 409 })
     }

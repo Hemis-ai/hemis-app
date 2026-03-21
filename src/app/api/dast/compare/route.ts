@@ -3,6 +3,7 @@ import { isDatabaseReachable, prisma } from '@/lib/db'
 import { compareScans, type ScanComparisonInput } from '@/lib/dast/comparison/scan-comparator'
 import { MOCK_DAST_SCANS, MOCK_DAST_FINDINGS } from '@/lib/mock-data/dast'
 import { isDastEngineRunning, proxyToEngine } from '@/lib/dast/engine-proxy'
+import { verifyAccessToken, ACCESS_COOKIE } from '@/lib/auth/jwt'
 
 /**
  * POST /api/dast/compare — Compare two DAST scans
@@ -67,6 +68,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ comparison: result, demo: true })
     }
 
+    // Verify org ownership of both scans
+    const token = req.cookies.get(ACCESS_COOKIE)?.value
+    const jwtPayload = token ? await verifyAccessToken(token) : null
+    const orgId = jwtPayload?.orgId || 'org-demo'
+
     // Real DB comparison
     const [baselineScan, currentScan] = await Promise.all([
       prisma.dastScan.findUnique({ where: { id: baselineScanId }, include: { dastFindings: true } }),
@@ -74,6 +80,11 @@ export async function POST(req: NextRequest) {
     ])
 
     if (!baselineScan || !currentScan) {
+      return NextResponse.json({ error: 'One or both scans not found' }, { status: 404 })
+    }
+
+    // Ensure both scans belong to the requesting org
+    if (baselineScan.orgId !== orgId || currentScan.orgId !== orgId) {
       return NextResponse.json({ error: 'One or both scans not found' }, { status: 404 })
     }
 
