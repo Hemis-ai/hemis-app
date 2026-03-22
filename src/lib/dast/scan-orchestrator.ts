@@ -1,5 +1,6 @@
 // DAST Scan Orchestrator — adapted from hemisx-dast scan.worker.ts
 // Runs the 7-phase scan pipeline as an async function (no Bull queue needed)
+// Falls back to the built-in HTTP scanner when ZAP is unavailable.
 
 import { prisma } from '@/lib/db'
 import type { AuthConfig, ZapAlert, CreateFindingInput, DastScanStatus, ScanProgressEvent, ScanProfile } from './types'
@@ -13,6 +14,7 @@ import { validateTarget } from './target-validator'
 import { calculateCvss, PRESET_VECTORS, cvssToSeverity } from './engine/scoring/cvss-calculator'
 import { getOwaspMappingOrDefault } from './engine/scoring/owasp-mapper'
 import { enrichScanFindings } from './ai/enrichment-service'
+import { runBuiltinScan, type BuiltinFinding } from './builtin-scanner'
 
 // In-memory progress store for SSE polling
 const progressStore = new Map<string, ScanProgressEvent>()
@@ -35,14 +37,38 @@ function emitProgress(scanId: string, status: DastScanStatus, progress: number, 
 }
 
 /**
+ * Check if ZAP is running and reachable.
+ */
+async function isZapAvailable(): Promise<boolean> {
+  try {
+    const zapUrl = process.env.ZAP_URL || 'http://localhost:8090'
+    const res = await fetch(`${zapUrl}/JSON/core/view/version/`, {
+      signal: AbortSignal.timeout(3000),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+/**
  * Run a full DAST scan. Called from the API route after creating the scan record.
  * This runs in the background (fire-and-forget from the route handler).
+ * Uses ZAP when available; falls back to built-in HTTP scanner otherwise.
  */
 export async function runDastScan(scanId: string): Promise<void> {
   const scan = await prisma.dastScan.findUnique({ where: { id: scanId } })
   if (!scan) return
 
   const { targetUrl, scope, excludedPaths, authConfig, scanProfile } = scan
+
+  // Check if ZAP is available; use built-in scanner if not
+  const zapAvailable = await isZapAvailable()
+  if (!zapAvailable) {
+    console.log(`ZAP not available — using built-in HTTP scanner for scan ${scanId}`)
+    return runBuiltinDastScan(scanId, targetUrl)
+  }
+
   const client = new ZapClient()
 
   try {
@@ -313,5 +339,108 @@ async function runAuthSessionTests(
   } catch (error) {
     console.warn('Auth session tests encountered an error:', error)
     onProgress(100, 'Auth testing completed with warnings')
+  }
+}
+
+// ─── Built-in Scanner Fallback ───────────────────────────────────────────
+
+/**
+ * Run a real DAST scan using the built-in HTTP scanner.
+ * This makes actual HTTP requests to the target — no ZAP or Python engine needed.
+ */
+async function runBuiltinDastScan(scanId: string, targetUrl: string): Promise<void> {
+  try {
+    await prisma.dastScan.update({
+      where: { id: scanId },
+      data: { status: 'RUNNING', startedAt: new Date(), currentPhase: 'initializing' },
+    })
+    emitProgress(scanId, 'RUNNING', 0, 'initializing', 'Starting built-in HTTP scanner...')
+
+    const result = await runBuiltinScan(targetUrl, (percent, phase, message) => {
+      emitProgress(scanId, 'RUNNING', percent, phase, message)
+      // Update DB progress periodically
+      if (percent % 10 === 0) {
+        prisma.dastScan.update({
+          where: { id: scanId },
+          data: { progress: percent, currentPhase: phase },
+        }).catch(() => {})
+      }
+    })
+
+    // Persist findings to database
+    if (result.findings.length > 0) {
+      await prisma.$transaction(
+        result.findings.map((f: BuiltinFinding) =>
+          prisma.dastFinding.create({
+            data: {
+              scanId,
+              type: f.type,
+              owaspCategory: f.owaspCategory,
+              cweId: f.cweId ?? null,
+              severity: f.severity,
+              cvssScore: f.cvssScore ?? null,
+              riskScore: f.riskScore,
+              title: f.title,
+              description: f.description,
+              businessImpact: f.businessImpact ?? null,
+              affectedUrl: f.affectedUrl,
+              affectedParameter: f.affectedParameter ?? null,
+              payload: f.payload ?? null,
+              requestEvidence: f.requestEvidence ?? null,
+              responseEvidence: f.responseEvidence ?? null,
+              remediation: f.remediation,
+              confidenceScore: f.confidenceScore,
+              status: 'OPEN',
+            },
+          })
+        )
+      )
+    }
+
+    // Calculate severity counts
+    const counts = await prisma.dastFinding.groupBy({
+      by: ['severity'],
+      where: { scanId },
+      _count: true,
+    })
+    const sev = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
+    for (const row of counts) sev[row.severity.toLowerCase() as keyof typeof sev] = row._count
+    const totalFindings = sev.critical + sev.high + sev.medium + sev.low + sev.info
+    const riskScore = Math.min(100, sev.critical * 25 + sev.high * 10 + sev.medium * 3 + sev.low * 1)
+
+    // Generate executive summary
+    const summary = `## Scan Overview\nBuilt-in DAST scan of **${targetUrl}** identified **${totalFindings} issues** across ${sev.critical} critical, ${sev.high} high, ${sev.medium} medium, ${sev.low} low, and ${sev.info} informational severity levels.\n\n## Key Findings\n${result.findings.filter(f => f.severity === 'CRITICAL' || f.severity === 'HIGH').map(f => `- **${f.title}** (${f.severity}) — ${f.affectedUrl}`).join('\n') || '- No critical or high severity issues found'}\n\n## Technology Stack\n${result.techStack.length > 0 ? result.techStack.join(', ') : 'Not detected'}`
+
+    await prisma.dastScan.update({
+      where: { id: scanId },
+      data: {
+        status: 'COMPLETED',
+        progress: 100,
+        currentPhase: 'complete',
+        completedAt: new Date(),
+        riskScore,
+        criticalCount: sev.critical,
+        highCount: sev.high,
+        mediumCount: sev.medium,
+        lowCount: sev.low,
+        infoCount: sev.info,
+        endpointsDiscovered: result.endpointsDiscovered,
+        endpointsTested: result.endpointsTested,
+        techStackDetected: result.techStack,
+        executiveSummary: summary,
+      },
+    })
+
+    emitProgress(scanId, 'COMPLETED', 100, 'complete', `Scan complete. ${totalFindings} findings.`)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+    console.error('Built-in DAST scan failed:', { scanId, error: errorMsg })
+    await prisma.dastScan.update({
+      where: { id: scanId },
+      data: { status: 'FAILED', currentPhase: 'failed', completedAt: new Date() },
+    })
+    emitProgress(scanId, 'FAILED', -1, 'failed', `Scan failed: ${errorMsg}`)
+  } finally {
+    setTimeout(() => clearProgress(scanId), 30_000)
   }
 }

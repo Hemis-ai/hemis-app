@@ -5,110 +5,65 @@ import type { ReportData } from '@/lib/dast/reports/html-template'
 import { renderReport } from '@/lib/dast/reports/html-template'
 import { generateJsonReport } from '@/lib/dast/reports/json-exporter'
 import { generateCsvReport } from '@/lib/dast/reports/csv-exporter'
-import { MOCK_DAST_SCANS, MOCK_DAST_FINDINGS } from '@/lib/mock-data/dast'
 import { isDastEngineRunning, proxyToEngine } from '@/lib/dast/engine-proxy'
+import { directScanStore } from '@/app/api/dast/scans/route'
 import { verifyAccessToken, ACCESS_COOKIE } from '@/lib/auth/jwt'
 
 /**
- * Build ReportData from mock data when the database is not available.
+ * Build ReportData from in-memory direct scan store when the database is not available.
  */
-function buildMockReportData(scanId: string): ReportData {
-  const scan = MOCK_DAST_SCANS.find(s => s.id === scanId)
-  if (!scan) throw new Error(`Scan ${scanId} not found`)
-  if (scan.status !== 'COMPLETED') throw new Error('Report can only be generated for completed scans')
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildDirectScanReportData(scanId: string): ReportData {
+  const entry = directScanStore.get(scanId)
+  if (!entry) throw new Error(`Scan ${scanId} not found`)
+  if (entry.scan.status !== 'COMPLETED') throw new Error('Report can only be generated for completed scans')
 
-  const findings = MOCK_DAST_FINDINGS.filter(f => f.scanId === scanId)
-
-  const total =
-    (scan.criticalCount ?? 0) +
-    (scan.highCount ?? 0) +
-    (scan.mediumCount ?? 0) +
-    (scan.lowCount ?? 0) +
-    (scan.infoCount ?? 0)
+  const s = entry.scan
+  const total = (s.criticalCount ?? 0) + (s.highCount ?? 0) + (s.mediumCount ?? 0) + (s.lowCount ?? 0) + (s.infoCount ?? 0)
 
   return {
     scan: {
-      id: scan.id,
-      name: scan.name,
-      targetUrl: scan.targetUrl,
-      scanProfile: scan.scanProfile,
-      startedAt: scan.startedAt ?? null,
-      completedAt: scan.completedAt ?? null,
-      endpointsDiscovered: scan.endpointsDiscovered ?? 0,
-      endpointsTested: scan.endpointsTested ?? 0,
-      payloadsSent: scan.payloadsSent ?? 0,
-      riskScore: scan.riskScore ?? 0,
-      techStackDetected: scan.techStackDetected ?? [],
+      id: s.id, name: s.name, targetUrl: s.targetUrl, scanProfile: s.scanProfile ?? 'full',
+      startedAt: s.startedAt ?? null, completedAt: s.completedAt ?? null,
+      endpointsDiscovered: s.endpointsDiscovered ?? 0, endpointsTested: s.endpointsTested ?? 0,
+      payloadsSent: 0, riskScore: s.riskScore ?? 0, techStackDetected: s.techStackDetected ?? [],
     },
-    counts: {
-      critical: scan.criticalCount ?? 0,
-      high: scan.highCount ?? 0,
-      medium: scan.mediumCount ?? 0,
-      low: scan.lowCount ?? 0,
-      info: scan.infoCount ?? 0,
-      total,
-    },
-    executiveSummary: scan.executiveSummary ?? null,
-    findings: findings.map(f => ({
-      title: f.title,
-      severity: f.severity,
-      cvssScore: f.cvssScore,
-      cvssVector: f.cvssVector,
-      owaspCategory: f.owaspCategory,
-      cweId: f.cweId,
-      affectedUrl: f.affectedUrl,
-      affectedParameter: f.affectedParameter,
-      description: f.description,
-      businessImpact: f.businessImpact,
-      remediation: f.remediation,
-      remediationCode: f.remediationCode,
-      pciDssRefs: f.pciDssRefs,
-      soc2Refs: f.soc2Refs,
-      mitreAttackIds: f.mitreAttackIds,
-      confidenceScore: f.confidenceScore,
+    counts: { critical: s.criticalCount ?? 0, high: s.highCount ?? 0, medium: s.mediumCount ?? 0, low: s.lowCount ?? 0, info: s.infoCount ?? 0, total },
+    executiveSummary: s.executiveSummary ?? null,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    findings: entry.findings.map((f: any) => ({
+      title: f.title, severity: f.severity, cvssScore: f.cvssScore ?? null, cvssVector: f.cvssVector ?? null,
+      owaspCategory: f.owaspCategory ?? null, cweId: f.cweId ?? null,
+      affectedUrl: f.affectedUrl, affectedParameter: f.affectedParameter ?? null,
+      description: f.description ?? '', businessImpact: f.businessImpact ?? null,
+      remediation: f.remediation ?? '', remediationCode: f.remediationCode ?? null,
+      pciDssRefs: f.pciDssRefs ?? [], soc2Refs: f.soc2Refs ?? [], mitreAttackIds: f.mitreAttackIds ?? [],
+      confidenceScore: f.confidenceScore ?? null,
     })),
     generatedAt: new Date().toISOString(),
-    orgId: scan.orgId,
+    orgId: s.orgId ?? 'org-demo',
   }
 }
 
 /**
- * Generate a report from mock data using the same report rendering functions.
+ * Generate a report from in-memory scan data using the same report rendering functions.
  */
-function generateMockReport(scanId: string, format: ReportFormat): GeneratedReport {
-  const data = buildMockReportData(scanId)
+function generateDirectScanReport(scanId: string, format: ReportFormat): GeneratedReport {
+  const data = buildDirectScanReportData(scanId)
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
 
   switch (format) {
     case 'json': {
       const content = generateJsonReport(data)
-      return {
-        scanId,
-        format,
-        fileName: `hemisx-dast-${scanId.substring(0, 8)}-${timestamp}.json`,
-        contentType: 'application/json',
-        content,
-      }
+      return { scanId, format, fileName: `hemisx-dast-${scanId.substring(0, 8)}-${timestamp}.json`, contentType: 'application/json', content }
     }
     case 'csv': {
       const content = generateCsvReport(data)
-      return {
-        scanId,
-        format,
-        fileName: `hemisx-dast-${scanId.substring(0, 8)}-${timestamp}.csv`,
-        contentType: 'text/csv',
-        content,
-      }
+      return { scanId, format, fileName: `hemisx-dast-${scanId.substring(0, 8)}-${timestamp}.csv`, contentType: 'text/csv', content }
     }
     case 'pdf': {
       const html = renderReport(data)
-      return {
-        scanId,
-        format,
-        fileName: `hemisx-dast-${scanId.substring(0, 8)}-${timestamp}.html`,
-        contentType: 'text/html',
-        content: html,
-      }
+      return { scanId, format, fileName: `hemisx-dast-${scanId.substring(0, 8)}-${timestamp}.html`, contentType: 'text/html', content: html }
     }
   }
 }
@@ -169,7 +124,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sca
     const dbOk = await isDatabaseReachable()
     const report = dbOk
       ? await generateReport(scanId, format, orgId)
-      : generateMockReport(scanId, format)
+      : generateDirectScanReport(scanId, format)
 
     if (format === 'json' || format === 'csv') {
       return new NextResponse(report.content as string, {

@@ -3,6 +3,11 @@ import { prisma, isDatabaseReachable } from '@/lib/db'
 import { verifyAccessToken, ACCESS_COOKIE } from '@/lib/auth/jwt'
 import { runDastScan } from '@/lib/dast/scan-orchestrator'
 import { isDastEngineRunning, proxyToEngine } from '@/lib/dast/engine-proxy'
+import { runBuiltinScan } from '@/lib/dast/builtin-scanner'
+
+// In-memory store for direct scans (no DB mode)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const directScanStore = new Map<string, { scan: any; findings: any[]; promise?: Promise<void>; error?: string }>()
 
 /**
  * GET /api/dast/scans — List DAST scans for the org
@@ -27,11 +32,19 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Fallback to database
-    return NextResponse.json(await _getDbScans(req))
+    // Fallback to database + in-memory direct scans
+    const dbResult = await _getDbScans(req)
+    // Include any direct (in-memory) scans
+    const directScans = Array.from(directScanStore.values()).map(d => d.scan)
+    return NextResponse.json({
+      scans: [...directScans, ...(dbResult.scans || [])],
+      pagination: dbResult.pagination,
+    })
   } catch (error) {
     console.error('GET /api/dast/scans error:', error)
-    return NextResponse.json({ scans: [], pagination: { page: 1, pageSize: 20, total: 0, totalPages: 0 }, demo: true })
+    // Still return any direct scans even on error
+    const directScans = Array.from(directScanStore.values()).map(d => d.scan)
+    return NextResponse.json({ scans: directScans, pagination: { page: 1, pageSize: 20, total: directScans.length, totalPages: 1 } })
   }
 }
 
@@ -92,23 +105,63 @@ export async function POST(req: NextRequest) {
 
     // Fallback to database-based scan
     const dbOk = await isDatabaseReachable()
-    if (!dbOk) return NextResponse.json({ error: 'Neither DAST engine nor database available' }, { status: 503 })
+    if (dbOk) {
+      const token = req.cookies.get(ACCESS_COOKIE)?.value
+      const payload = token ? await verifyAccessToken(token) : null
+      const orgId = payload?.orgId || 'org-demo'
 
-    const token = req.cookies.get(ACCESS_COOKIE)?.value
-    const payload = token ? await verifyAccessToken(token) : null
-    const orgId = payload?.orgId || 'org-demo'
+      const scan = await prisma.dastScan.create({
+        data: {
+          orgId, name: name.trim(), targetUrl: targetUrl.trim(),
+          scope: scope ?? [], excludedPaths: excludedPaths ?? [],
+          authConfig: authConfig ?? null, scanProfile: scanProfile ?? 'full',
+          status: 'CREATED',
+        },
+      })
 
-    const scan = await prisma.dastScan.create({
-      data: {
-        orgId, name: name.trim(), targetUrl: targetUrl.trim(),
-        scope: scope ?? [], excludedPaths: excludedPaths ?? [],
-        authConfig: authConfig ?? null, scanProfile: scanProfile ?? 'full',
-        status: 'CREATED',
-      },
+      // Start scan in background (fire-and-forget)
+      runDastScan(scan.id).catch((err) => console.error('Background scan error:', err))
+
+      return NextResponse.json({ scan }, { status: 201 })
+    }
+
+    // No engine, no database — run built-in scanner directly and return results
+    // This is the "standalone" mode: scan runs inline and returns findings immediately
+    const scanId = `direct-${Date.now()}`
+    const scan = {
+      id: scanId, orgId: 'org-demo', name: name.trim(), targetUrl: targetUrl.trim(),
+      scanProfile: scanProfile ?? 'full', status: 'RUNNING' as const, progress: 0,
+      currentPhase: 'initializing', startedAt: new Date().toISOString(),
+    }
+
+    // Return scan immediately, then the frontend will poll /api/dast/scans/[id] for progress
+    // But since we don't have a DB, we'll run the scan and store results in-memory
+    const directScanPromise = runBuiltinScan(targetUrl).then(result => {
+      directScanStore.set(scanId, {
+        scan: {
+          ...scan, status: 'COMPLETED', progress: 100, currentPhase: 'complete',
+          completedAt: new Date().toISOString(), riskScore: Math.min(100, result.findings.filter(f => f.severity === 'CRITICAL').length * 25 + result.findings.filter(f => f.severity === 'HIGH').length * 10 + result.findings.filter(f => f.severity === 'MEDIUM').length * 3),
+          criticalCount: result.findings.filter(f => f.severity === 'CRITICAL').length,
+          highCount: result.findings.filter(f => f.severity === 'HIGH').length,
+          mediumCount: result.findings.filter(f => f.severity === 'MEDIUM').length,
+          lowCount: result.findings.filter(f => f.severity === 'LOW').length,
+          infoCount: result.findings.filter(f => f.severity === 'INFO').length,
+          endpointsDiscovered: result.endpointsDiscovered, endpointsTested: result.endpointsTested,
+          techStackDetected: result.techStack,
+          executiveSummary: `Built-in scan of ${targetUrl} found ${result.findings.length} issues.`,
+        },
+        findings: result.findings.map((f, i) => ({ id: `${scanId}-f${i}`, scanId, ...f })),
+      })
+    }).catch(err => {
+      directScanStore.set(scanId, {
+        scan: { ...scan, status: 'FAILED', progress: -1, currentPhase: 'failed', completedAt: new Date().toISOString() },
+        findings: [],
+        error: err instanceof Error ? err.message : 'Scan failed',
+      })
     })
 
-    // Start scan in background (fire-and-forget)
-    runDastScan(scan.id).catch((err) => console.error('Background scan error:', err))
+    // Store the promise so polling knows a scan is running
+    directScanStore.set(scanId, { scan, findings: [], promise: directScanPromise })
 
     return NextResponse.json({ scan }, { status: 201 })
   } catch (error) {

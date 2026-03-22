@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isDatabaseReachable, prisma } from '@/lib/db'
 import { compareScans, type ScanComparisonInput } from '@/lib/dast/comparison/scan-comparator'
-import { MOCK_DAST_SCANS, MOCK_DAST_FINDINGS } from '@/lib/mock-data/dast'
 import { isDastEngineRunning, proxyToEngine } from '@/lib/dast/engine-proxy'
+import { directScanStore } from '@/app/api/dast/scans/route'
 import { verifyAccessToken, ACCESS_COOKIE } from '@/lib/auth/jwt'
 
 /**
@@ -38,34 +38,35 @@ export async function POST(req: NextRequest) {
     const dbOk = await isDatabaseReachable()
 
     if (!dbOk) {
-      // Use mock data
-      const baselineScan = MOCK_DAST_SCANS.find(s => s.id === baselineScanId)
-      const currentScan = MOCK_DAST_SCANS.find(s => s.id === currentScanId)
+      // Check in-memory direct scan store
+      const baseEntry = directScanStore.get(baselineScanId)
+      const curEntry = directScanStore.get(currentScanId)
 
-      if (!baselineScan || !currentScan) {
-        return NextResponse.json({ error: 'One or both scans not found' }, { status: 404 })
+      if (!baseEntry || !curEntry) {
+        return NextResponse.json({ error: 'One or both scans not found. Database is not available.' }, { status: 404 })
       }
 
-      const baselineFindings = MOCK_DAST_FINDINGS.filter(f => f.scanId === baselineScanId).map(f => ({
-        id: f.id, type: f.type, severity: f.severity, title: f.title,
-        affectedUrl: f.affectedUrl, affectedParameter: f.affectedParameter,
-        cvssScore: f.cvssScore, owaspCategory: f.owaspCategory, cweId: f.cweId, riskScore: f.riskScore,
-      }))
-      const currentFindings = MOCK_DAST_FINDINGS.filter(f => f.scanId === currentScanId).map(f => ({
-        id: f.id, type: f.type, severity: f.severity, title: f.title,
-        affectedUrl: f.affectedUrl, affectedParameter: f.affectedParameter,
-        cvssScore: f.cvssScore, owaspCategory: f.owaspCategory, cweId: f.cweId, riskScore: f.riskScore,
-      }))
-
-      const baseInput: ScanComparisonInput = {
-        ...baselineScan, findings: baselineFindings,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      function entryToInput(entry: { scan: any; findings: any[] }): ScanComparisonInput {
+        return {
+          id: entry.scan.id, name: entry.scan.name, targetUrl: entry.scan.targetUrl,
+          riskScore: entry.scan.riskScore ?? 0, criticalCount: entry.scan.criticalCount ?? 0,
+          highCount: entry.scan.highCount ?? 0, mediumCount: entry.scan.mediumCount ?? 0,
+          lowCount: entry.scan.lowCount ?? 0, infoCount: entry.scan.infoCount ?? 0,
+          endpointsDiscovered: entry.scan.endpointsDiscovered ?? 0,
+          endpointsTested: entry.scan.endpointsTested ?? 0, payloadsSent: 0,
+          completedAt: entry.scan.completedAt ?? null,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          findings: entry.findings.map((f: any) => ({
+            id: f.id, type: f.type, severity: f.severity, title: f.title,
+            affectedUrl: f.affectedUrl, affectedParameter: f.affectedParameter,
+            cvssScore: f.cvssScore, owaspCategory: f.owaspCategory, cweId: f.cweId, riskScore: f.riskScore ?? 0,
+          })),
+        }
       }
-      const curInput: ScanComparisonInput = {
-        ...currentScan, findings: currentFindings,
-      }
 
-      const result = compareScans(baseInput, curInput)
-      return NextResponse.json({ comparison: result, demo: true })
+      const result = compareScans(entryToInput(baseEntry), entryToInput(curEntry))
+      return NextResponse.json({ comparison: result })
     }
 
     // Verify org ownership of both scans

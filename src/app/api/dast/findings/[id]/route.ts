@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, isDatabaseReachable } from '@/lib/db'
-import { MOCK_DAST_FINDINGS } from '@/lib/mock-data/dast'
 import { verifyAccessToken, ACCESS_COOKIE } from '@/lib/auth/jwt'
+import { directScanStore } from '@/app/api/dast/scans/route'
 
 /**
  * GET /api/dast/findings/:id — Get finding detail
@@ -12,9 +12,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const dbOk = await isDatabaseReachable()
 
     if (!dbOk) {
-      const mock = MOCK_DAST_FINDINGS.find((f) => f.id === id)
-      if (!mock) return NextResponse.json({ error: 'Finding not found' }, { status: 404 })
-      return NextResponse.json({ finding: mock, demo: true })
+      // Check in-memory direct scan store for findings
+      for (const entry of directScanStore.values()) {
+        const found = entry.findings.find((f: { id: string }) => f.id === id)
+        if (found) return NextResponse.json({ finding: found })
+      }
+      return NextResponse.json({ error: 'Finding not found' }, { status: 404 })
     }
 
     const finding = await prisma.dastFinding.findUnique({

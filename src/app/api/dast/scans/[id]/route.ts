@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, isDatabaseReachable } from '@/lib/db'
 import { getProgress } from '@/lib/dast/scan-orchestrator'
-import { MOCK_DAST_SCANS } from '@/lib/mock-data/dast'
 import { isDastEngineRunning, proxyToEngine } from '@/lib/dast/engine-proxy'
 import { verifyAccessToken, ACCESS_COOKIE } from '@/lib/auth/jwt'
+import { directScanStore } from '../route'
 
 /**
  * GET /api/dast/scans/:id — Get scan details + progress
@@ -11,6 +11,12 @@ import { verifyAccessToken, ACCESS_COOKIE } from '@/lib/auth/jwt'
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+
+    // Check in-memory direct scan store first (no-DB mode)
+    const directScan = directScanStore.get(id)
+    if (directScan) {
+      return NextResponse.json({ scan: directScan.scan, progress: null, findings: directScan.findings })
+    }
 
     // Try Python engine first
     const engineOk = await isDastEngineRunning()
@@ -22,12 +28,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       }
     }
 
-    // Fallback to DB/mock
+    // Fallback to DB
     const dbOk = await isDatabaseReachable()
     if (!dbOk) {
-      const mock = MOCK_DAST_SCANS.find((s) => s.id === id)
-      if (!mock) return NextResponse.json({ error: 'Scan not found' }, { status: 404 })
-      return NextResponse.json({ scan: mock, demo: true })
+      return NextResponse.json({ error: 'Scan not found' }, { status: 404 })
     }
 
     const scan = await prisma.dastScan.findUnique({

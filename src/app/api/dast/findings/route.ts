@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma, isDatabaseReachable } from '@/lib/db'
 import { isDastEngineRunning, proxyToEngine } from '@/lib/dast/engine-proxy'
 import { verifyAccessToken, ACCESS_COOKIE } from '@/lib/auth/jwt'
+import { directScanStore } from '@/app/api/dast/scans/route'
 
 /**
  * GET /api/dast/findings?scanId=xxx — List findings for a scan
@@ -26,7 +27,15 @@ export async function GET(req: NextRequest) {
     // Fallback to DB
     const dbOk = await isDatabaseReachable()
     if (!dbOk) {
-      return NextResponse.json({ findings: [], pagination: { page: 1, pageSize: 50, total: 0, totalPages: 0 }, demo: true })
+      // Check in-memory direct scan store for findings
+      const directEntry = directScanStore.get(scanId)
+      if (directEntry) {
+        return NextResponse.json({
+          findings: directEntry.findings,
+          pagination: { page: 1, pageSize: 50, total: directEntry.findings.length, totalPages: 1 },
+        })
+      }
+      return NextResponse.json({ findings: [], pagination: { page: 1, pageSize: 50, total: 0, totalPages: 0 } })
     }
 
     // Verify org ownership of this scan

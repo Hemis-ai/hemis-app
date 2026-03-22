@@ -305,9 +305,28 @@ export default function DastPage() {
               const scan = pollData.scan
               const progress = pollData.progress
               if (progress) setScanProgress(progress)
+              // Update progress from scan object if no separate progress event
+              if (!progress && scan.progress != null && scan.status === 'RUNNING') {
+                setScanProgress({
+                  scanId: scan.id, status: 'RUNNING', progress: scan.progress,
+                  currentPhase: scan.currentPhase || 'scanning',
+                  endpointsDiscovered: scan.endpointsDiscovered || 0,
+                  endpointsTested: scan.endpointsTested || 0,
+                  payloadsSent: scan.payloadsSent || 0,
+                  findingsCount: 0, message: `Scanning... ${scan.progress}%`,
+                  timestamp: new Date().toISOString(),
+                })
+              }
               if (scan.status === 'COMPLETED' || scan.status === 'FAILED') {
                 if (pollRef.current) clearInterval(pollRef.current)
                 pollRef.current = null
+                // If findings came back in the response (direct/no-DB mode), add them to state
+                if (pollData.findings && Array.isArray(pollData.findings) && pollData.findings.length > 0) {
+                  setFindings(prev => {
+                    const otherFindings = prev.filter((f: DastFinding) => f.scanId !== scan.id)
+                    return [...otherFindings, ...pollData.findings]
+                  })
+                }
                 if (scan.status === 'COMPLETED') {
                   setLastCompletedScanId(scan.id)
                   setSelectedScan(scan)
