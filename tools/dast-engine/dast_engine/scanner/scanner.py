@@ -35,6 +35,15 @@ from .plugins.nosql import NoSQLPlugin
 from .plugins.jwt_check import JWTCheckPlugin
 from .plugins.idor import IDORPlugin
 from .plugins.request_smuggling import RequestSmugglingPlugin
+from .plugins.graphql import GraphQLPlugin
+from .plugins.xxe import XXEPlugin
+from .plugins.cache_poisoning import CachePoisoningPlugin
+from .plugins.prototype_pollution import PrototypePollutionPlugin
+from .plugins.oauth import OAuthPlugin
+from .plugins.jwt_advanced import JWTAdvancedPlugin
+from .plugins.websocket import WebSocketPlugin
+from .plugins.mass_assignment import MassAssignmentPlugin
+from .plugins.race_condition import RaceConditionPlugin
 from ..crawler.crawler import CrawlResult, FormTarget
 from ..config import settings
 
@@ -52,6 +61,9 @@ def get_plugins(profile: str = "full") -> list[BasePlugin]:
         CacheAnalysisPlugin(),
         BackupDiscoveryPlugin(),
         JWTCheckPlugin(),
+        JWTAdvancedPlugin(),
+        MassAssignmentPlugin(),
+        CachePoisoningPlugin(),
     ]
     active = [
         SQLiPlugin(),
@@ -66,11 +78,21 @@ def get_plugins(profile: str = "full") -> list[BasePlugin]:
         NoSQLPlugin(),
         IDORPlugin(),
         RequestSmugglingPlugin(),
+        GraphQLPlugin(),
+        XXEPlugin(),
+        PrototypePollutionPlugin(),
+        OAuthPlugin(),
+        WebSocketPlugin(),
+        RaceConditionPlugin(),
     ]
     if profile == "quick":
         return passive + [SQLiPlugin(), XSSPlugin()]
     elif profile == "api_only":
-        return [SQLiPlugin(), CommandInjectionPlugin(), SSRFPlugin(), HeaderAnalysisPlugin(), CORSPlugin()]
+        return [
+            SQLiPlugin(), CommandInjectionPlugin(), SSRFPlugin(),
+            HeaderAnalysisPlugin(), CORSPlugin(), GraphQLPlugin(),
+            MassAssignmentPlugin(), OAuthPlugin(), JWTAdvancedPlugin(),
+        ]
     elif profile == "deep":
         return passive + active
     else:
@@ -123,7 +145,7 @@ class Scanner:
             total = len(targets)
             tested = 0
 
-            passive_plugins = [p for p in self.plugins if isinstance(p, (HeaderAnalysisPlugin, CookieAnalysisPlugin, CORSPlugin, InfoDisclosurePlugin, TLSCheckPlugin, CacheAnalysisPlugin, BackupDiscoveryPlugin, JWTCheckPlugin))]
+            passive_plugins = [p for p in self.plugins if isinstance(p, (HeaderAnalysisPlugin, CookieAnalysisPlugin, CORSPlugin, InfoDisclosurePlugin, TLSCheckPlugin, CacheAnalysisPlugin, BackupDiscoveryPlugin, JWTCheckPlugin, JWTAdvancedPlugin, MassAssignmentPlugin, CachePoisoningPlugin))]
             active_plugins = [p for p in self.plugins if p not in passive_plugins]
 
             # ── Static site detection ──
