@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useCallback } from 'react'
+import type * as THREE from 'three'
 import type { AttackGraph, KillChain } from '@/lib/types/wbrt'
 
 export interface AttackGraph3DProps {
@@ -132,7 +133,7 @@ export default function AttackGraph3D({
             const color = NODE_COLOR[node.type as string] ?? '#888'
             const size = SEV_SIZE[node.severity as string] ?? 6
             const mat = new THREEmod.MeshLambertMaterial({ color, transparent: true, opacity: 0.9 })
-            let geo: THREEmod.BufferGeometry
+            let geo: THREE.BufferGeometry
             switch (SHAPE_BY_TYPE[node.type as string]) {
               case 'octahedron':  geo = new THREEmod.OctahedronGeometry(size); break
               case 'box':         geo = new THREEmod.BoxGeometry(size, size, size); break
