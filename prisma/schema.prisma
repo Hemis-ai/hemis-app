@@ -31,6 +31,7 @@ model Organization {
   sastScans            SastScan[]
   dastScans            DastScan[]
   githubInstallations  GitHubInstallation[]
+  bbrtEngagements      BbrtEngagement[]
 }
 
 model User {
@@ -361,6 +362,66 @@ model DastFinding {
   scan DastScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
 
   @@index([scanId])
+  @@index([severity])
+  @@index([status])
+}
+
+// ─── Black Box Red Teaming (BBRT) ─────────────────────────────────────────
+model BbrtEngagement {
+  id              String    @id @default(cuid())
+  orgId           String
+  name            String
+  targetDomain    String
+  targetConfig    String    @db.Text   // JSON: BbrtTargetConfig
+  status          String    @default("CREATED")
+  progress        Int       @default(0)
+  currentPhase    String    @default("created")
+  riskScore       Int?
+  criticalCount   Int       @default(0)
+  highCount       Int       @default(0)
+  mediumCount     Int       @default(0)
+  lowCount        Int       @default(0)
+  reconData       String?   @db.Text   // JSON: BbrtReconResult
+  attackSurface   String?   @db.Text   // JSON: BbrtAttackSurface
+  killChainsData  String?   @db.Text   // JSON: BbrtKillChain[]
+  reportData      String?   @db.Text   // JSON: BbrtReport
+  createdAt       DateTime  @default(now())
+  startedAt       DateTime?
+  completedAt     DateTime?
+
+  org      Organization   @relation(fields: [orgId], references: [id])
+  findings BbrtFinding[]
+
+  @@index([orgId])
+  @@index([status])
+}
+
+model BbrtFinding {
+  id               String   @id @default(cuid())
+  engagementId     String
+  type             String                        // BbrtFindingType
+  severity         String                        // SastSeverity
+  cvssScore        Float?
+  title            String
+  description      String   @db.Text
+  affectedAsset    String
+  affectedAssetLabel String @default("")
+  affectedUrl      String?
+  evidence         String?  @db.Text             // JSON: BbrtEvidence
+  mitreAttackIds   String[]
+  exploitability   String                        // BbrtExploitability
+  businessImpact   String?  @db.Text             // JSON: BusinessImpact
+  remediationSteps String?  @db.Text             // JSON: string[]
+  references       String[]
+  cweId            String?
+  cveId            String?
+  discoveredInPhase String  @default("VULN_DISCOVERY")
+  status           String   @default("OPEN")     // BbrtFindingStatus
+  discoveredAt     DateTime @default(now())
+
+  engagement BbrtEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@index([engagementId])
   @@index([severity])
   @@index([status])
 }
