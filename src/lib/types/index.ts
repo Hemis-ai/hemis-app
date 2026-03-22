@@ -171,4 +171,7 @@ export interface DastScanProgress {
   findingsCount:       number
   message:             string
   timestamp:           string
+  estimatedTimeRemaining?: number | null
+  estimatedTotalTime?:     number | null
+  scanSpeed?:              number | null
 }

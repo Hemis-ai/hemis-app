@@ -357,6 +357,7 @@ class Scanner:
             ))
 
         # Add main pages for passive analysis (headers, cookies, info disclosure)
+        # No cap — passive plugins need full URL coverage for Burp-parity findings
         for url in self.crawl_result.urls:
             if url not in seen_urls:
                 headers_for_url = self.crawl_result.response_headers.get(url, {})
@@ -368,7 +369,5 @@ class Scanner:
                     response_headers=headers_for_url,
                 ))
                 seen_urls.add(url)
-                if len(targets) > 200:
-                    break
 
         return targets
