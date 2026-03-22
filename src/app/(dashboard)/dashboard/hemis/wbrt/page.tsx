@@ -1,5 +1,9 @@
 'use client'
 
+import dynamic from 'next/dynamic'
+
+const AttackGraph3D = dynamic(() => import('@/components/wbrt/AttackGraph3D'), { ssr: false })
+
 import { useState, useCallback } from 'react'
 import type {
   AttackGraph,
@@ -176,304 +180,6 @@ function renderSummaryMarkdown(md: string): React.ReactNode[] {
   })
 
   return elements
-}
-
-// ─── Attack Graph SVG ─────────────────────────────────────────────────────────
-
-function AttackGraphSvg({
-  graph,
-  selectedNodeId,
-  onSelectNode,
-}: {
-  graph: AttackGraph
-  selectedNodeId: string | null
-  onSelectNode: (id: string | null) => void
-}) {
-  const WIDTH = 660
-  const HEIGHT = 580
-
-  // Column x positions by node type
-  const COL_X: Record<string, number> = {
-    entry_point:  80,
-    vulnerability: 230,
-    asset:        390,
-    privilege:    390,
-    crown_jewel:  545,
-    data:         545,
-  }
-
-  // Assign y positions within each column
-  const colCounts: Record<string, number> = {}
-  const colIndexes: Record<string, number> = {}
-  graph.nodes.forEach(n => {
-    colCounts[n.type] = (colCounts[n.type] || 0) + 1
-  })
-  const nodesWithPos: (AttackGraphNode & { cx: number; cy: number })[] = graph.nodes.map(n => {
-    const idx = colIndexes[n.type] || 0
-    const total = colCounts[n.type]
-    const spacing = (HEIGHT - 80) / (total + 1)
-    const cy = 40 + spacing * (idx + 1)
-    const cx = COL_X[n.type] || 80
-    colIndexes[n.type] = idx + 1
-    return { ...n, cx, cy }
-  })
-
-  const posById: Record<string, { cx: number; cy: number }> = {}
-  nodesWithPos.forEach(n => { posById[n.id] = { cx: n.cx, cy: n.cy } })
-  const nodeById: Record<string, AttackGraphNode> = {}
-  graph.nodes.forEach(n => { nodeById[n.id] = n })
-
-  return (
-    <div>
-      <svg
-        width="100%"
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        style={{ background: 'var(--color-bg-base)', border: '1px solid var(--color-border)', borderRadius: 2, display: 'block' }}
-      >
-        {/* Edges */}
-        {graph.edges.map(edge => {
-          const src = posById[edge.source]
-          const tgt = posById[edge.target]
-          if (!src || !tgt) return null
-          if (edge.source === edge.target) return null
-          const srcNode = nodeById[edge.source]
-          const color = NODE_COLOR[srcNode?.type ?? ''] ?? '#888'
-          const mx = (src.cx + tgt.cx) / 2
-          const my = (src.cy + tgt.cy) / 2
-          return (
-            <g key={edge.id}>
-              <line
-                x1={src.cx} y1={src.cy} x2={tgt.cx} y2={tgt.cy}
-                stroke={color}
-                strokeOpacity={0.35}
-                strokeWidth={1.5}
-                strokeDasharray={edge.probability < 0.6 ? '5,4' : undefined}
-              />
-              <text
-                x={mx} y={my - 4}
-                fontSize={8}
-                fill={color}
-                fillOpacity={0.7}
-                textAnchor="middle"
-                fontFamily="var(--font-mono)"
-              >
-                {edge.techniqueId}
-              </text>
-            </g>
-          )
-        })}
-
-        {/* Nodes */}
-        {nodesWithPos.map(node => {
-          const color = NODE_COLOR[node.type] || '#888'
-          const isSelected = selectedNodeId === node.id
-          const isEntry = graph.entryPoints.includes(node.id)
-          const isCrown = graph.crownJewels.includes(node.id)
-          const label = node.label.slice(0, 13) + (node.label.length > 13 ? '…' : '')
-          return (
-            <g
-              key={node.id}
-              onClick={() => onSelectNode(isSelected ? null : node.id)}
-              style={{ cursor: 'pointer' }}
-            >
-              {isSelected && (
-                <circle cx={node.cx} cy={node.cy} r={36} fill="none" stroke={color} strokeWidth={1.5} strokeOpacity={0.5} />
-              )}
-              {isCrown && !isSelected && (
-                <circle cx={node.cx} cy={node.cy} r={34} fill="none" stroke={color} strokeWidth={1} strokeOpacity={0.3} strokeDasharray="4,3" />
-              )}
-              {isEntry && (
-                <polygon
-                  points={`${node.cx - 38},${node.cy} ${node.cx - 31},${node.cy - 7} ${node.cx - 31},${node.cy + 7}`}
-                  fill={color} fillOpacity={0.6}
-                />
-              )}
-              <circle
-                cx={node.cx} cy={node.cy} r={28}
-                fill={color + '22'}
-                stroke={color}
-                strokeWidth={isSelected ? 2.5 : 1.5}
-                strokeOpacity={isSelected ? 1 : 0.75}
-              />
-              <text
-                x={node.cx} y={node.cy + 4}
-                fontSize={9} fontWeight={700}
-                fill={color}
-                textAnchor="middle"
-                fontFamily="var(--font-mono)"
-              >
-                {node.type === 'entry_point'   ? 'EP'
-                  : node.type === 'vulnerability' ? 'VLN'
-                  : node.type === 'privilege'     ? 'PRV'
-                  : node.type === 'asset'         ? 'AST'
-                  : node.type === 'crown_jewel'   ? 'CJ'
-                  : 'DAT'}
-              </text>
-              <text
-                x={node.cx} y={node.cy + 44}
-                fontSize={8.5}
-                fill={color}
-                fillOpacity={0.85}
-                textAnchor="middle"
-                fontFamily="var(--font-mono)"
-              >
-                {label}
-              </text>
-            </g>
-          )
-        })}
-      </svg>
-    </div>
-  )
-}
-
-// ─── Node detail panel ────────────────────────────────────────────────────────
-
-function NodeDetailPanel({
-  nodeId,
-  graph,
-  onClose,
-}: {
-  nodeId: string
-  graph: AttackGraph
-  onClose: () => void
-}) {
-  const node = graph.nodes.find(n => n.id === nodeId)
-  if (!node) return null
-
-  const outEdges = graph.edges.filter(e => e.source === nodeId)
-  const inEdges  = graph.edges.filter(e => e.target === nodeId && e.source !== nodeId)
-  const color = NODE_COLOR[node.type] || '#888'
-
-  const nodeById: Record<string, AttackGraphNode> = {}
-  graph.nodes.forEach(n => { nodeById[n.id] = n })
-
-  return (
-    <div style={{
-      marginTop: 16,
-      border: `1px solid ${color}55`,
-      background: color + '08',
-      borderRadius: 2,
-      padding: 20,
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-            <span style={{
-              fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700,
-              padding: '2px 8px', background: color + '25', color,
-              border: `1px solid ${color}55`, borderRadius: 2, letterSpacing: '0.1em',
-            }}>
-              {node.type.toUpperCase().replace('_', ' ')}
-            </span>
-            {graph.entryPoints.includes(nodeId) && (
-              <span style={{
-                fontFamily: 'var(--font-mono)', fontSize: 9, padding: '2px 8px',
-                color: '#00d4aa', border: '1px solid #00d4aa55', background: '#00d4aa15',
-              }}>
-                ENTRY POINT
-              </span>
-            )}
-            {graph.crownJewels.includes(nodeId) && (
-              <span style={{
-                fontFamily: 'var(--font-mono)', fontSize: 9, padding: '2px 8px',
-                color: '#b06aff', border: '1px solid #b06aff55', background: '#b06aff15',
-              }}>
-                CROWN JEWEL
-              </span>
-            )}
-          </div>
-          <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', margin: '0 0 6px' }}>
-            {node.label}
-          </h3>
-          <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', margin: 0, lineHeight: 1.6 }}>
-            {node.description}
-          </p>
-        </div>
-        <button
-          onClick={onClose}
-          style={{
-            background: 'none', border: '1px solid var(--color-border)',
-            color: 'var(--color-text-dim)', padding: '4px 10px',
-            cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10, flexShrink: 0, marginLeft: 16,
-          }}
-        >
-          ✕ CLOSE
-        </button>
-      </div>
-
-      {/* Metadata tags */}
-      {Object.keys(node.metadata).length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-          {Object.entries(node.metadata).map(([k, v]) => (
-            <span key={k} style={{
-              fontFamily: 'var(--font-mono)', fontSize: 9,
-              padding: '2px 8px', background: 'var(--color-bg-surface)',
-              border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)',
-            }}>
-              {k}: <span style={{ color: 'var(--color-text-primary)' }}>{v}</span>
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Edges */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <div>
-          <div style={{
-            fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.12em',
-            color: 'var(--color-text-dim)', marginBottom: 8, textTransform: 'uppercase',
-          }}>
-            Outbound Attack Paths ({outEdges.length})
-          </div>
-          {outEdges.length === 0 ? (
-            <div style={{ fontSize: 11, color: 'var(--color-text-dim)' }}>No outbound edges</div>
-          ) : outEdges.map(e => {
-            const tgt = nodeById[e.target]
-            return (
-              <div key={e.id} style={{ marginBottom: 10, paddingLeft: 8, borderLeft: `2px solid ${color}44` }}>
-                <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: 2 }}>
-                  → {tgt?.label ?? e.target}
-                </div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color, marginBottom: 2 }}>
-                  {e.techniqueId} · {e.technique}
-                </div>
-                <div style={{ fontSize: 10, color: 'var(--color-text-dim)' }}>
-                  Probability: {Math.round(e.probability * 100)}%
-                </div>
-              </div>
-            )
-          })}
-        </div>
-        <div>
-          <div style={{
-            fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.12em',
-            color: 'var(--color-text-dim)', marginBottom: 8, textTransform: 'uppercase',
-          }}>
-            Inbound Paths ({inEdges.length})
-          </div>
-          {inEdges.length === 0 ? (
-            <div style={{ fontSize: 11, color: 'var(--color-text-dim)' }}>No inbound edges</div>
-          ) : inEdges.map(e => {
-            const src = nodeById[e.source]
-            return (
-              <div key={e.id} style={{ marginBottom: 10, paddingLeft: 8, borderLeft: '2px solid var(--color-border)' }}>
-                <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: 2 }}>
-                  ← {src?.label ?? e.source}
-                </div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--color-text-secondary)', marginBottom: 2 }}>
-                  {e.techniqueId} · {e.technique}
-                </div>
-                <div style={{ fontSize: 10, color: 'var(--color-text-dim)', lineHeight: 1.5 }}>
-                  {e.description.slice(0, 100)}{e.description.length > 100 ? '…' : ''}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    </div>
-  )
 }
 
 // ─── Kill Chain card ──────────────────────────────────────────────────────────
@@ -1536,13 +1242,15 @@ export default function WbrtPage() {
               [ ATTACK GRAPH — CLICK A NODE FOR DETAILS ]
             </div>
 
-            <AttackGraphSvg
+            <AttackGraph3D
               graph={attackGraph}
+              killChains={killChains}
               selectedNodeId={selectedNodeId}
               onSelectNode={setSelectedNodeId}
+              height={580}
             />
 
-            {/* Color legend */}
+            {/* Node shape legend */}
             <div style={{ display: 'flex', gap: 16, marginTop: 14, flexWrap: 'wrap' }}>
               {Object.entries(NODE_COLOR).map(([type, color]) => (
                 <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1555,22 +1263,134 @@ export default function WbrtPage() {
                   </span>
                 </div>
               ))}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: 22, height: 1, borderTop: '1px dashed var(--color-text-dim)' }} />
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--color-text-dim)' }}>
-                  low prob (&lt;60%)
-                </span>
-              </div>
             </div>
 
-            {/* Node detail panel */}
-            {selectedNodeId && (
-              <NodeDetailPanel
-                nodeId={selectedNodeId}
-                graph={attackGraph}
-                onClose={() => setSelectedNodeId(null)}
-              />
-            )}
+            {/* Inline node detail panel */}
+            {selectedNodeId && (() => {
+              const node = attackGraph.nodes.find(n => n.id === selectedNodeId)
+              if (!node) return null
+              const inbound  = attackGraph.edges.filter(e => e.target === selectedNodeId)
+              const outbound = attackGraph.edges.filter(e => e.source === selectedNodeId)
+              const color    = NODE_COLOR[node.type] ?? '#888'
+              const inChains = killChains.filter(kc =>
+                kc.steps.some(s => s.techniqueId && attackGraph.edges.some(
+                  e => (e.source === selectedNodeId || e.target === selectedNodeId) && e.techniqueId === s.techniqueId
+                ))
+              )
+              return (
+                <div style={{
+                  marginTop: 16,
+                  background: 'var(--color-bg-surface)',
+                  border: `1px solid ${color}44`,
+                  borderRadius: 2, padding: 20,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{
+                        background: color + '22', border: `1px solid ${color}`,
+                        borderRadius: 2, padding: '3px 10px',
+                        fontFamily: 'var(--font-mono)', fontSize: 9, color,
+                        textTransform: 'uppercase', letterSpacing: '0.1em',
+                      }}>
+                        {node.type.replace('_', ' ')}
+                      </div>
+                      <span style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                        {node.label}
+                      </span>
+                      {node.severity && (
+                        <div style={{
+                          background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)',
+                          borderRadius: 2, padding: '2px 8px',
+                          fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--color-text-secondary)', fontWeight: 700,
+                        }}>
+                          {node.severity}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setSelectedNodeId(null)}
+                      style={{
+                        background: 'none', border: '1px solid var(--color-border)',
+                        borderRadius: 2, padding: '4px 10px', cursor: 'pointer',
+                        fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--color-text-dim)',
+                      }}
+                    >
+                      CLEAR ✕
+                    </button>
+                  </div>
+
+                  {node.description && (
+                    <p style={{ fontFamily: 'var(--font-sans)', fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 14 }}>
+                      {node.description}
+                    </p>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 14 }}>
+                    <div>
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--color-text-dim)', letterSpacing: '0.1em', marginBottom: 8, textTransform: 'uppercase' }}>
+                        Inbound ({inbound.length})
+                      </div>
+                      {inbound.length === 0
+                        ? <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-text-dim)' }}>—</div>
+                        : inbound.map(e => (
+                          <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: '#5ab0ff', background: 'rgba(90,176,255,0.1)', padding: '2px 6px', borderRadius: 2 }}>
+                              {e.techniqueId}
+                            </span>
+                            <span style={{ fontFamily: 'var(--font-sans)', fontSize: 11, color: 'var(--color-text-secondary)' }}>
+                              {e.description?.slice(0, 40) ?? ''}
+                            </span>
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--color-text-dim)' }}>
+                              {Math.round((e.probability ?? 0) * 100)}%
+                            </span>
+                          </div>
+                        ))
+                      }
+                    </div>
+                    <div>
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--color-text-dim)', letterSpacing: '0.1em', marginBottom: 8, textTransform: 'uppercase' }}>
+                        Outbound ({outbound.length})
+                      </div>
+                      {outbound.length === 0
+                        ? <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-text-dim)' }}>—</div>
+                        : outbound.map(e => (
+                          <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: '#ef5a5a', background: 'rgba(239,90,90,0.1)', padding: '2px 6px', borderRadius: 2 }}>
+                              {e.techniqueId}
+                            </span>
+                            <span style={{ fontFamily: 'var(--font-sans)', fontSize: 11, color: 'var(--color-text-secondary)' }}>
+                              {e.description?.slice(0, 40) ?? ''}
+                            </span>
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--color-text-dim)' }}>
+                              {Math.round((e.probability ?? 0) * 100)}%
+                            </span>
+                          </div>
+                        ))
+                      }
+                    </div>
+                  </div>
+
+                  {inChains.length > 0 && (
+                    <div>
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--color-text-dim)', letterSpacing: '0.1em', marginBottom: 8, textTransform: 'uppercase' }}>
+                        Kill Chain Membership
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {inChains.map(kc => (
+                          <div key={kc.id} style={{
+                            background: 'rgba(239,90,90,0.1)', border: '1px solid rgba(239,90,90,0.3)',
+                            borderRadius: 2, padding: '3px 10px',
+                            fontFamily: 'var(--font-mono)', fontSize: 9, color: '#ef5a5a',
+                          }}>
+                            {kc.name}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
         </div>
       )}
