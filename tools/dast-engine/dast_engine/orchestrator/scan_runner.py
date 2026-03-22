@@ -17,13 +17,43 @@ from ..scoring.cvss_calculator import get_cvss_for_type
 from ..scoring.owasp_mapper import get_owasp_mapping
 from ..storage.scan_store import store
 from ..config import settings
+from .scan_estimator import ScanEstimator
 
 
 PROFILE_CONFIG = {
-    "full": {"max_depth": 10, "max_pages": 500},
-    "quick": {"max_depth": 3, "max_pages": 50},
-    "api_only": {"max_depth": 5, "max_pages": 200},
-    "deep": {"max_depth": 20, "max_pages": 1000},
+    "quick": {
+        "max_depth": 3,
+        "max_pages": 50,
+        "active_plugins": ["sqli", "xss"],  # Only critical checks
+        "max_payload_per_param": 3,  # Fewer payloads
+        "skip_verification": True,  # Skip double-verification for speed
+        "timeout_multiplier": 0.5,
+    },
+    "full": {
+        "max_depth": 10,
+        "max_pages": 500,
+        "active_plugins": "all",
+        "max_payload_per_param": 10,
+        "skip_verification": False,
+        "timeout_multiplier": 1.0,
+    },
+    "api_only": {
+        "max_depth": 5,
+        "max_pages": 200,
+        "active_plugins": ["sqli", "cmdi", "ssrf", "nosql", "ssti"],
+        "max_payload_per_param": 8,
+        "skip_verification": False,
+        "timeout_multiplier": 1.0,
+    },
+    "deep": {
+        "max_depth": 20,
+        "max_pages": 1000,
+        "active_plugins": "all",
+        "max_payload_per_param": 25,  # More payloads, more thorough
+        "skip_verification": False,
+        "timeout_multiplier": 2.0,
+        "enable_fuzzing": True,  # Enable adaptive fuzzing
+    },
 }
 
 
@@ -33,8 +63,22 @@ class ScanRunner:
         self.config = scan_config
         self.auth_headers: dict[str, str] = {}
         self.auth_cookies: dict[str, str] = {}
+        self.estimator = ScanEstimator(self.config.scanProfile.value)
 
     def _update_progress(self, progress: int, phase: str, message: str, status: str = "RUNNING", **kwargs):
+        # Attach ETA information from the estimator if available
+        try:
+            estimate = self.estimator.update_during_scan(
+                self.estimator._endpoints_tested,
+                self.estimator._endpoints_discovered or 1,
+                self.estimator._payloads_sent,
+            )
+            kwargs.setdefault("estimatedTimeRemaining", round(estimate.estimated_remaining_seconds, 1))
+            kwargs.setdefault("estimatedTotalTime", round(estimate.estimated_total_seconds, 1))
+            kwargs.setdefault("scanSpeed", round(estimate.endpoints_per_second, 2))
+        except Exception:
+            pass  # Don't let estimation errors break progress reporting
+
         event = ScanProgressEvent(
             scanId=self.scan_id,
             status=status,
@@ -52,28 +96,48 @@ class ScanRunner:
         try:
             store.update_scan(self.scan_id, status=ScanStatus.RUNNING, startedAt=datetime.utcnow().isoformat())
 
+            # Initial ETA estimate
+            self.estimator.estimate_initial(self.config.targetUrl)
+
             # Phase 1: Initialization (0-5%)
+            self.estimator.phase_start("initializing")
             self._update_progress(2, "initializing", "Validating target and configuring scan...")
             await self._phase_init()
+            self.estimator.phase_end("initializing")
 
             # Phase 2: Crawling (5-40%)
+            self.estimator.phase_start("crawling")
             self._update_progress(5, "crawling", "Starting web crawl...")
             crawl_result = await self._phase_crawl()
+            self.estimator.phase_end("crawling")
+
+            # Refine ETA after crawl with real endpoint/param counts
+            total_params = sum(len(p.get("params", [])) for p in getattr(crawl_result, "pages", []))
+            total_forms = len(getattr(crawl_result, "forms", []))
+            self.estimator.update_after_crawl(len(crawl_result.urls), total_params, total_forms)
 
             # Phase 3: Active Scanning (40-85%)
+            self.estimator.phase_start("scanning")
             self._update_progress(40, "scanning", "Starting vulnerability scanning...")
             raw_findings = await self._phase_scan(crawl_result)
+            self.estimator.phase_end("scanning")
 
             # Phase 4: Extraction (85-90%)
+            self.estimator.phase_start("extracting")
             self._update_progress(85, "extracting", f"Processing {len(raw_findings)} findings...")
             findings = await self._phase_extract(raw_findings)
+            self.estimator.phase_end("extracting")
 
             # Phase 5-6: Analysis (90-98%)
+            self.estimator.phase_start("analyzing")
             self._update_progress(90, "analyzing", "Generating executive summary...")
             self._phase_analyze(findings, crawl_result)
+            self.estimator.phase_end("analyzing")
 
             # Phase 7: Complete (100%)
+            self.estimator.phase_start("complete")
             self._phase_complete(findings, crawl_result)
+            self.estimator.phase_end("complete")
 
         except asyncio.CancelledError:
             store.update_scan(self.scan_id, status=ScanStatus.CANCELLED)
@@ -202,10 +266,15 @@ class ScanRunner:
         """Phase 3: Run vulnerability scanner plugins."""
         def on_scan_progress(tested: int, total: int, payloads: int, msg: str):
             progress = min(40 + int(45 * tested / max(total, 1)), 85)
+            # Update estimator with real-time scan metrics
+            estimate = self.estimator.update_during_scan(tested, total, payloads)
             self._update_progress(
                 progress, "scanning", msg,
                 endpointsTested=tested,
                 payloadsSent=payloads,
+                estimatedTimeRemaining=round(estimate.estimated_remaining_seconds, 1),
+                estimatedTotalTime=round(estimate.estimated_total_seconds, 1),
+                scanSpeed=round(estimate.endpoints_per_second, 2),
             )
 
         scanner = Scanner(

@@ -24,6 +24,7 @@ class ScanTarget:
     response_body: str = ""
     response_status: int = 200
     content_type: str = ""
+    skip_active: bool = False
 
 
 @dataclass

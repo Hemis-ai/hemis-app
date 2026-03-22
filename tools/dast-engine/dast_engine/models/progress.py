@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
 
@@ -12,4 +13,7 @@ class ScanProgressEvent(BaseModel):
     payloadsSent: int = 0
     findingsCount: int = 0
     message: str = ""
+    estimatedTimeRemaining: Optional[float] = None  # seconds
+    estimatedTotalTime: Optional[float] = None  # seconds
+    scanSpeed: Optional[float] = None  # endpoints per second
     timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())

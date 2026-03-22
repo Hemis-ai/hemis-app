@@ -1,9 +1,12 @@
 """DAST scan comparison endpoint."""
 from __future__ import annotations
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
 from ..storage.scan_store import store
+from ..reports.burp_parser import parse_burp_html, parse_burp_xml
+from ..reports.comparison_engine import ComparisonEngine
+from ..reports.gap_report import generate_gap_analysis, generate_gap_summary_text
 
 router = APIRouter()
 
@@ -92,3 +95,67 @@ def _generate_comparison_summary(baseline, current, new_findings, resolved, pers
             summary += f" ⚠ {critical_new} critical and {high_new} high-severity new findings require immediate attention."
 
     return summary
+
+
+# ---------------------------------------------------------------------------
+# Benchmark comparison endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.post("/scans/{scan_id}/compare")
+async def compare_with_benchmark(
+    scan_id: str,
+    benchmark_file: UploadFile = File(...),
+):
+    """Compare a HemisX scan's findings against an uploaded Burp/ZAP report.
+
+    Accepts Burp Suite HTML or XML reports.  The file type is inferred from
+    the filename extension or content.
+    """
+    scan = store.get_scan(scan_id)
+    if not scan:
+        raise HTTPException(404, f"Scan {scan_id} not found")
+
+    hemisx_findings = store.get_findings(scan_id)
+
+    # Read uploaded file
+    content_bytes = await benchmark_file.read()
+    try:
+        content = content_bytes.decode("utf-8", errors="replace")
+    except Exception:
+        raise HTTPException(400, "Could not decode uploaded file as text")
+
+    if not content.strip():
+        raise HTTPException(400, "Uploaded file is empty")
+
+    # Detect format and parse
+    filename = (benchmark_file.filename or "").lower()
+    benchmark_findings: list = []
+
+    if filename.endswith(".xml") or content.strip().startswith("<?xml"):
+        benchmark_findings = parse_burp_xml(content)
+        benchmark_source = "Burp Suite (XML)"
+    else:
+        # Default to HTML parsing
+        benchmark_findings = parse_burp_html(content)
+        benchmark_source = "Burp Suite (HTML)"
+
+    if not benchmark_findings:
+        raise HTTPException(
+            422,
+            "No findings could be extracted from the uploaded report. "
+            "Ensure it is a valid Burp Suite HTML or XML export.",
+        )
+
+    # Run gap analysis
+    gap_report = generate_gap_analysis(
+        hemisx_findings=hemisx_findings,
+        benchmark_findings=benchmark_findings,
+        scan_id=scan_id,
+        benchmark_source=benchmark_source,
+    )
+
+    # Also include a human-readable summary
+    gap_report["gapAnalysis"]["textSummary"] = generate_gap_summary_text(gap_report)
+
+    return gap_report

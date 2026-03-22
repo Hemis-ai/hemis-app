@@ -1,5 +1,5 @@
 """
-CORS misconfiguration detection — reports once per domain.
+CORS misconfiguration detection — reports once per domain (or per-endpoint for wildcard).
 Domain dedup state is held in the per-scan ScanContext (not a module global).
 """
 from __future__ import annotations
@@ -15,10 +15,9 @@ class CORSPlugin(BasePlugin):
     async def scan(self, target: ScanTarget, ctx: ScanContext) -> list[RawFinding]:
         findings: list[RawFinding] = []
 
-        # Only report CORS once per domain (scoped to THIS scan's context)
+        # Only report origin-reflection/wildcard+creds CORS once per domain
         domain = urlparse(target.url).netloc
-        if domain in ctx.cors_reported_domains:
-            return findings
+        domain_already_reported = domain in ctx.cors_reported_domains
 
         # Test with arbitrary Origin
         test_origins = [
@@ -39,9 +38,10 @@ class CORSPlugin(BasePlugin):
             acao = resp.headers.get("access-control-allow-origin", "")
             acac = resp.headers.get("access-control-allow-credentials", "").lower()
 
-            # Dangerous: reflects arbitrary origin
-            if acao == origin:
+            # Dangerous: reflects arbitrary origin (report once per domain)
+            if acao == origin and not domain_already_reported:
                 ctx.cors_reported_domains.add(domain)
+                domain_already_reported = True
                 severity = "HIGH" if acac == "true" else "MEDIUM"
 
                 # Verification
@@ -79,9 +79,10 @@ class CORSPlugin(BasePlugin):
                 ))
                 break
 
-            # Dangerous: wildcard with credentials
-            if acao == "*" and acac == "true":
+            # Dangerous: wildcard with credentials (report once per domain)
+            if acao == "*" and acac == "true" and not domain_already_reported:
                 ctx.cors_reported_domains.add(domain)
+                domain_already_reported = True
                 findings.append(RawFinding(
                     vuln_type="cors_misconfiguration",
                     title="CORS Wildcard with Credentials",
@@ -91,6 +92,29 @@ class CORSPlugin(BasePlugin):
                     remediation="Never combine wildcard CORS with credentials. Use specific origins.",
                     confidence=95, verified=True,
                     business_impact="Any website can make authenticated requests and read responses.",
+                ))
+                break
+
+            # Overly permissive: wildcard without credentials (report per-endpoint)
+            if acao == "*" and acac != "true":
+                findings.append(RawFinding(
+                    vuln_type="cors_misconfiguration",
+                    title="Overly Permissive CORS Policy (Wildcard Origin)",
+                    description=(
+                        f"The endpoint returns Access-Control-Allow-Origin: * which allows any website to "
+                        f"read responses via cross-origin requests. While credentials are not included, "
+                        f"this may expose sensitive data returned by this endpoint to unauthorized origins."
+                    ),
+                    affected_url=target.url, severity="INFO",
+                    request_evidence=f"Origin: {origin}",
+                    response_evidence="Access-Control-Allow-Origin: *",
+                    remediation=(
+                        "Restrict Access-Control-Allow-Origin to specific trusted origins instead of using "
+                        "a wildcard '*'. If the endpoint serves only public data, document this as an "
+                        "accepted risk."
+                    ),
+                    confidence=85, verified=True,
+                    business_impact="Any website can read cross-origin responses from this endpoint, potentially exposing non-public data.",
                 ))
                 break
 

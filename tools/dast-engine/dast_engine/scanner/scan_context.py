@@ -24,6 +24,18 @@ class ScanContext:
     reported_domains: set[str] = field(default_factory=set)
     cors_reported_domains: set[str] = field(default_factory=set)
 
+    # Fingerprints of known 404 pages for custom 404 detection
+    custom_404_signatures: set[str] = field(default_factory=set)
+
+    # Technology stack detected by crawler (e.g. ["PHP", "WordPress", "MySQL"])
+    tech_stack: list[str] = field(default_factory=list)
+
+    # Whether a WAF was detected in front of the target
+    waf_detected: bool = False
+
+    # Server software (e.g. "nginx", "apache", "iis", "cloudflare")
+    server_type: str = ""
+
     # Per-scan HTTP client (replaces global _client_pool in base_plugin)
     _client: Optional[httpx.AsyncClient] = field(default=None, repr=False)
 

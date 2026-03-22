@@ -10,6 +10,8 @@ This ensures 100% isolation between concurrent scan jobs.
 """
 from __future__ import annotations
 import asyncio
+import hashlib
+import logging
 from typing import Optional, Callable
 from .base_plugin import BasePlugin, ScanTarget, RawFinding
 from .scan_context import ScanContext
@@ -23,8 +25,20 @@ from .plugins.header_analysis import HeaderAnalysisPlugin
 from .plugins.cookie_analysis import CookieAnalysisPlugin
 from .plugins.cors import CORSPlugin
 from .plugins.info_disclosure import InfoDisclosurePlugin
+from .plugins.tls_check import TLSCheckPlugin
+from .plugins.cache_analysis import CacheAnalysisPlugin
+from .plugins.backup_discovery import BackupDiscoveryPlugin
+from .plugins.method_tampering import MethodTamperingPlugin
+from .plugins.host_header import HostHeaderPlugin
+from .plugins.ssti import SSTIPlugin
+from .plugins.nosql import NoSQLPlugin
+from .plugins.jwt_check import JWTCheckPlugin
+from .plugins.idor import IDORPlugin
+from .plugins.request_smuggling import RequestSmugglingPlugin
 from ..crawler.crawler import CrawlResult, FormTarget
 from ..config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def get_plugins(profile: str = "full") -> list[BasePlugin]:
@@ -34,6 +48,10 @@ def get_plugins(profile: str = "full") -> list[BasePlugin]:
         CookieAnalysisPlugin(),
         CORSPlugin(),
         InfoDisclosurePlugin(),
+        TLSCheckPlugin(),
+        CacheAnalysisPlugin(),
+        BackupDiscoveryPlugin(),
+        JWTCheckPlugin(),
     ]
     active = [
         SQLiPlugin(),
@@ -42,6 +60,12 @@ def get_plugins(profile: str = "full") -> list[BasePlugin]:
         PathTraversalPlugin(),
         SSRFPlugin(),
         OpenRedirectPlugin(),
+        MethodTamperingPlugin(),
+        HostHeaderPlugin(),
+        SSTIPlugin(),
+        NoSQLPlugin(),
+        IDORPlugin(),
+        RequestSmugglingPlugin(),
     ]
     if profile == "quick":
         return passive + [SQLiPlugin(), XSSPlugin()]
@@ -75,6 +99,17 @@ class Scanner:
         # Per-scan context — holds all mutable state for THIS scan only
         self.ctx = ScanContext(scan_id=scan_id, target_url=target_url)
 
+        # Populate tech stack from crawler results
+        if crawl_result.tech_stack:
+            self.ctx.tech_stack = list(crawl_result.tech_stack)
+
+        # Detect server type from response headers (use first available page)
+        for _url, hdrs in crawl_result.response_headers.items():
+            server_header = hdrs.get("server", hdrs.get("Server", ""))
+            if server_header:
+                self.ctx.server_type = server_header.lower().split("/")[0].strip()
+                break
+
     async def scan(self) -> list[RawFinding]:
         """Run all plugins against all discovered endpoints."""
         findings: list[RawFinding] = []
@@ -88,8 +123,17 @@ class Scanner:
             total = len(targets)
             tested = 0
 
-            passive_plugins = [p for p in self.plugins if isinstance(p, (HeaderAnalysisPlugin, CookieAnalysisPlugin, CORSPlugin, InfoDisclosurePlugin))]
+            passive_plugins = [p for p in self.plugins if isinstance(p, (HeaderAnalysisPlugin, CookieAnalysisPlugin, CORSPlugin, InfoDisclosurePlugin, TLSCheckPlugin, CacheAnalysisPlugin, BackupDiscoveryPlugin, JWTCheckPlugin))]
             active_plugins = [p for p in self.plugins if p not in passive_plugins]
+
+            # ── Static site detection ──
+            is_static = self._detect_static_site(targets)
+            if is_static:
+                logger.warning(
+                    "Target %s appears to be a static site — skipping active "
+                    "injection plugins, running passive plugins only.",
+                    self.target_url,
+                )
 
             # ── Passive scan (no injection, uses stored response data) ──
             for target in targets:
@@ -102,32 +146,49 @@ class Scanner:
                         pass
 
             # ── Active scan (injection-based, controlled concurrency) ──
-            semaphore = asyncio.Semaphore(settings.max_concurrent_requests)
+            if not is_static:
+                # Filter out targets marked as skip_active
+                active_targets = [
+                    t for t in targets
+                    if not t.skip_active
+                    and t.response_status not in (404, 405)
+                    and t.response_status < 500
+                ]
+                skipped = len(targets) - len(active_targets)
+                if skipped:
+                    logger.info(
+                        "Skipping active testing on %d/%d endpoints "
+                        "(non-functional or non-injectable)",
+                        skipped, len(targets),
+                    )
 
-            async def scan_target(target: ScanTarget, idx: int):
-                nonlocal tested
-                target_findings = []
-                for plugin in active_plugins:
-                    try:
-                        async with semaphore:
-                            results = await plugin.scan(target, self.ctx)
-                            target_findings.extend(results)
-                            self.total_payloads += plugin.payloads_sent
-                    except Exception:
-                        pass
-                tested += 1
-                if self.on_progress:
-                    self.on_progress(tested, total, self.total_payloads, f"Testing endpoint {tested}/{total}")
-                return target_findings
+                semaphore = asyncio.Semaphore(settings.max_concurrent_requests)
+                total_active = len(active_targets)
 
-            batch_size = settings.max_concurrent_requests
-            for i in range(0, len(targets), batch_size):
-                batch = targets[i:i + batch_size]
-                tasks = [scan_target(t, i + j) for j, t in enumerate(batch)]
-                batch_results = await asyncio.gather(*tasks, return_exceptions=True)
-                for result in batch_results:
-                    if isinstance(result, list):
-                        findings.extend(result)
+                async def scan_target(target: ScanTarget, idx: int):
+                    nonlocal tested
+                    target_findings = []
+                    for plugin in active_plugins:
+                        try:
+                            async with semaphore:
+                                results = await plugin.scan(target, self.ctx)
+                                target_findings.extend(results)
+                                self.total_payloads += plugin.payloads_sent
+                        except Exception:
+                            pass
+                    tested += 1
+                    if self.on_progress:
+                        self.on_progress(tested, total, self.total_payloads, f"Testing endpoint {tested}/{total}")
+                    return target_findings
+
+                batch_size = settings.max_concurrent_requests
+                for i in range(0, len(active_targets), batch_size):
+                    batch = active_targets[i:i + batch_size]
+                    tasks = [scan_target(t, i + j) for j, t in enumerate(batch)]
+                    batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+                    for result in batch_results:
+                        if isinstance(result, list):
+                            findings.extend(result)
 
         finally:
             # Clean up per-scan HTTP client — only affects THIS scan
@@ -146,8 +207,24 @@ class Scanner:
 
     async def _populate_response_bodies(self, targets: list[ScanTarget]):
         """Fetch response bodies for targets that need passive analysis.
-        This gives passive plugins (header analysis, DOM XSS) real response data."""
+        This gives passive plugins (header analysis, DOM XSS) real response data.
+        Also validates endpoints and marks non-functional ones as skip_active."""
         client = await self.ctx.get_client()
+
+        # First pass: fetch a known-bad URL to fingerprint the site's custom 404
+        try:
+            notfound_resp = await client.get(
+                self.target_url.rstrip("/") + "/hemisx-dast-nonexistent-page-404-check",
+                headers={"User-Agent": settings.user_agent, **self.auth_headers},
+                cookies={**self.crawl_result.cookies, **self.auth_cookies},
+                timeout=settings.request_timeout,
+                follow_redirects=True,
+            )
+            sig = self._body_signature(notfound_resp.text)
+            self.ctx.custom_404_signatures.add(sig)
+        except Exception:
+            pass
+
         for target in targets:
             if target.response_body:
                 continue  # Already populated
@@ -165,8 +242,84 @@ class Scanner:
                 # Update response headers if not already set
                 if not target.response_headers:
                     target.response_headers = dict(resp.headers)
+
+                # --- Endpoint validation: mark non-functional endpoints ---
+                # Skip active testing for error status codes
+                if target.response_status in (404, 405) or target.response_status >= 500:
+                    target.skip_active = True
+                    logger.debug(
+                        "Skipping active scan for %s (status %d)",
+                        target.url, target.response_status,
+                    )
+                    continue
+
+                # Skip active testing if response matches a custom 404 page
+                body_sig = self._body_signature(resp.text)
+                if body_sig in self.ctx.custom_404_signatures:
+                    target.skip_active = True
+                    logger.debug(
+                        "Skipping active scan for %s (matches custom 404 signature)",
+                        target.url,
+                    )
+                    continue
+
+                # Skip active injection testing for non-HTML/JSON content types
+                ct = target.content_type.split(";")[0].strip()
+                injectable_types = {
+                    "text/html", "application/xhtml+xml",
+                    "application/json", "text/json",
+                    "application/x-www-form-urlencoded",
+                    "",  # Allow empty content-type (unknown)
+                }
+                if ct and ct not in injectable_types:
+                    target.skip_active = True
+                    logger.debug(
+                        "Skipping active scan for %s (content-type: %s)",
+                        target.url, ct,
+                    )
+
             except Exception:
-                pass
+                target.skip_active = True
+
+    @staticmethod
+    def _body_signature(body: str) -> str:
+        """Create a normalized fingerprint of a response body for comparison.
+        Strips whitespace variations to catch custom 404 pages that differ only
+        in trivial formatting."""
+        normalized = " ".join(body.split()).strip()
+        return hashlib.sha256(normalized.encode("utf-8", errors="replace")).hexdigest()
+
+    def _detect_static_site(self, targets: list[ScanTarget]) -> bool:
+        """Detect if the target appears to be a static site.
+        A site is considered static if:
+          - All pages return the same body structure (identical signatures)
+          - No forms accept POST submissions
+          - No cookies are set by the server
+        Returns True if the site appears static."""
+        if not targets:
+            return False
+
+        # Check 1: Are there any forms that accept submissions?
+        has_forms = any(t.form_fields for t in targets)
+        if has_forms:
+            return False
+
+        # Check 2: Does the server set any cookies?
+        has_cookies = bool(self.crawl_result.cookies)
+        if has_cookies:
+            return False
+
+        # Check 3: Do all pages share the same body signature?
+        signatures = set()
+        for t in targets:
+            if t.response_body:
+                signatures.add(self._body_signature(t.response_body))
+        # If there are very few unique signatures relative to pages, it's likely static
+        populated = sum(1 for t in targets if t.response_body)
+        if populated >= 3 and len(signatures) <= 1:
+            return True
+
+        return False
 
     def _build_targets(self) -> list[ScanTarget]:
         """Build ScanTarget objects from crawl results."""

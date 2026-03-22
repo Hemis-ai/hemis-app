@@ -63,12 +63,19 @@ PRESET_VECTORS: dict[str, dict] = {
     "sql_injection_oracle": {"AV": "N", "AC": "L", "PR": "N", "UI": "N", "S": "U", "C": "H", "I": "H", "A": "H"},
     "command_injection": {"AV": "N", "AC": "L", "PR": "N", "UI": "N", "S": "U", "C": "H", "I": "H", "A": "H"},
     "ssti": {"AV": "N", "AC": "L", "PR": "N", "UI": "N", "S": "U", "C": "H", "I": "H", "A": "H"},
+    "nosql_injection": {"AV": "N", "AC": "L", "PR": "N", "UI": "N", "S": "U", "C": "H", "I": "H", "A": "H"},
+    "nosql_auth_bypass": {"AV": "N", "AC": "L", "PR": "N", "UI": "N", "S": "U", "C": "H", "I": "H", "A": "N"},
     # High: Data Exfiltration / Significant Impact
     "ssrf": {"AV": "N", "AC": "L", "PR": "N", "UI": "N", "S": "C", "C": "H", "I": "N", "A": "N"},
     "directory_traversal": {"AV": "N", "AC": "L", "PR": "N", "UI": "N", "S": "U", "C": "H", "I": "N", "A": "N"},
     "xxe": {"AV": "N", "AC": "L", "PR": "N", "UI": "N", "S": "U", "C": "H", "I": "H", "A": "N"},
     "session_fixation": {"AV": "N", "AC": "L", "PR": "N", "UI": "R", "S": "U", "C": "H", "I": "H", "A": "N"},
     "broken_access_control": {"AV": "N", "AC": "L", "PR": "L", "UI": "N", "S": "U", "C": "H", "I": "H", "A": "N"},
+    "jwt_none_alg": {"AV": "N", "AC": "L", "PR": "N", "UI": "N", "S": "U", "C": "H", "I": "H", "A": "N"},
+    "jwt_weak_alg": {"AV": "N", "AC": "H", "PR": "N", "UI": "N", "S": "U", "C": "H", "I": "L", "A": "N"},
+    "jwt_missing_exp": {"AV": "N", "AC": "H", "PR": "L", "UI": "N", "S": "U", "C": "L", "I": "L", "A": "N"},
+    "idor": {"AV": "N", "AC": "L", "PR": "L", "UI": "N", "S": "U", "C": "H", "I": "N", "A": "N"},
+    "request_smuggling": {"AV": "N", "AC": "H", "PR": "N", "UI": "N", "S": "C", "C": "H", "I": "H", "A": "N"},
     # Medium: Client-Side / Conditional Impact
     "xss_reflected": {"AV": "N", "AC": "L", "PR": "N", "UI": "R", "S": "C", "C": "L", "I": "L", "A": "N"},
     "xss_stored": {"AV": "N", "AC": "L", "PR": "L", "UI": "R", "S": "C", "C": "L", "I": "L", "A": "N"},
@@ -87,6 +94,29 @@ PRESET_VECTORS: dict[str, dict] = {
     "missing_samesite": {"AV": "N", "AC": "H", "PR": "N", "UI": "R", "S": "U", "C": "L", "I": "N", "A": "N"},
     "server_version_leak": {"AV": "N", "AC": "L", "PR": "N", "UI": "N", "S": "U", "C": "L", "I": "N", "A": "N"},
     "debug_error_messages": {"AV": "N", "AC": "L", "PR": "N", "UI": "N", "S": "U", "C": "L", "I": "N", "A": "N"},
+    # TLS Certificate Issues
+    "tls_self_signed": {"AV": "N", "AC": "H", "PR": "N", "UI": "N", "S": "U", "C": "H", "I": "H", "A": "N"},
+    "tls_cert_expired": {"AV": "N", "AC": "H", "PR": "N", "UI": "N", "S": "U", "C": "H", "I": "H", "A": "N"},
+    "tls_cert_expiring_soon": {"AV": "N", "AC": "H", "PR": "N", "UI": "N", "S": "U", "C": "N", "I": "N", "A": "L"},
+    "tls_hostname_mismatch": {"AV": "N", "AC": "H", "PR": "N", "UI": "N", "S": "U", "C": "H", "I": "H", "A": "N"},
+    "tls_deprecated_version": {"AV": "N", "AC": "H", "PR": "N", "UI": "N", "S": "U", "C": "H", "I": "N", "A": "N"},
+    "hsts_missing_includesubdomains": {"AV": "N", "AC": "H", "PR": "N", "UI": "R", "S": "U", "C": "L", "I": "N", "A": "N"},
+    "hsts_missing_preload": {"AV": "N", "AC": "H", "PR": "N", "UI": "R", "S": "U", "C": "N", "I": "N", "A": "N"},
+    # Cacheable HTTPS Responses
+    "cacheable_https_response": {"AV": "N", "AC": "H", "PR": "N", "UI": "N", "S": "U", "C": "L", "I": "N", "A": "N"},
+    "cacheable_sensitive_response": {"AV": "N", "AC": "H", "PR": "N", "UI": "N", "S": "U", "C": "L", "I": "N", "A": "N"},
+    "missing_pragma_no_cache": {"AV": "N", "AC": "H", "PR": "N", "UI": "N", "S": "U", "C": "N", "I": "N", "A": "N"},
+    # Backup File Exposure
+    "backup_file_exposure": {"AV": "N", "AC": "L", "PR": "N", "UI": "N", "S": "U", "C": "H", "I": "N", "A": "N"},
+    # HTTP Method Tampering
+    "trace_method_enabled": {"AV": "N", "AC": "H", "PR": "N", "UI": "R", "S": "U", "C": "L", "I": "L", "A": "N"},
+    "dangerous_method_allowed": {"AV": "N", "AC": "L", "PR": "N", "UI": "N", "S": "U", "C": "N", "I": "L", "A": "L"},
+    "verbose_options_response": {"AV": "N", "AC": "L", "PR": "N", "UI": "N", "S": "U", "C": "L", "I": "N", "A": "N"},
+    # Host Header Injection
+    "host_header_injection": {"AV": "N", "AC": "L", "PR": "N", "UI": "R", "S": "U", "C": "H", "I": "H", "A": "N"},
+    "x_forwarded_host_injection": {"AV": "N", "AC": "L", "PR": "N", "UI": "R", "S": "U", "C": "H", "I": "H", "A": "N"},
+    "host_header_port_injection": {"AV": "N", "AC": "H", "PR": "N", "UI": "R", "S": "U", "C": "L", "I": "L", "A": "N"},
+    "potential_password_reset_poisoning": {"AV": "N", "AC": "H", "PR": "N", "UI": "R", "S": "U", "C": "L", "I": "L", "A": "N"},
 }
 
 
