@@ -9,6 +9,7 @@ export interface BuiltinFinding {
   cweId?: string
   severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO'
   cvssScore?: number
+  cvssVector?: string
   riskScore: number
   title: string
   description: string
@@ -19,13 +20,19 @@ export interface BuiltinFinding {
   requestEvidence?: string
   responseEvidence?: string
   remediation: string
+  remediationCode?: string   // JSON: { language, before, after }
   confidenceScore: number
+  isConfirmed?: boolean
+  pciDssRefs?: string[]
+  soc2Refs?: string[]
+  mitreAttackIds?: string[]
 }
 
 export interface ScanResult {
   findings: BuiltinFinding[]
   endpointsDiscovered: number
   endpointsTested: number
+  payloadsSent: number
   techStack: string[]
 }
 
@@ -37,6 +44,199 @@ interface CrawledPage {
   links: string[]
 }
 
+// ─── Enrichment Maps ──────────────────────────────────────────────────────
+// Maps finding types to CVSS vectors, compliance refs, MITRE ATT&CK IDs, business impact, and remediation code
+
+const CVSS_VECTORS: Record<string, string> = {
+  'CORS_MISCONFIGURATION': 'CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:N',
+  'MISSING_SECURITY_HEADERS': 'CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N',
+  'INSECURE_COOKIE': 'CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N',
+  'INFORMATION_DISCLOSURE': 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N',
+  'TLS_CONFIGURATION': 'CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N',
+  'TLS_CERTIFICATE_INFO': 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N',
+  'SENSITIVE_FILE_EXPOSURE': 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N',
+  'BACKUP_FILE_FOUND': 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N',
+  'SECRET_EXPOSURE': 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H',
+  'CLICKJACKING': 'CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:N',
+  'CACHEABLE_RESPONSE': 'CVSS:3.1/AV:L/AC:H/PR:L/UI:N/S:U/C:L/I:N/A:N',
+  'CSP_WEAKNESS': 'CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N',
+  'MISSING_SRI': 'CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:N',
+  'MIXED_CONTENT': 'CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:L/A:N',
+  'OPEN_REDIRECT': 'CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N',
+  'PROTOTYPE_POLLUTION': 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:H/A:L',
+  'EXPOSED_ENDPOINT': 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N',
+  'VERBOSE_ERROR': 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N',
+  'DOM_XSS': 'CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N',
+  'HTTP_METHODS': 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:N',
+}
+
+const MITRE_MAP: Record<string, string[]> = {
+  'CORS_MISCONFIGURATION': ['T1189', 'T1557'],           // Drive-by Compromise, Adversary-in-the-Middle
+  'MISSING_SECURITY_HEADERS': ['T1189'],                  // Drive-by Compromise
+  'INSECURE_COOKIE': ['T1539', 'T1550.004'],             // Steal Web Session Cookie, Web Session Cookie
+  'INFORMATION_DISCLOSURE': ['T1592', 'T1590'],           // Gather Victim Host Info, Gather Victim Network Info
+  'TLS_CONFIGURATION': ['T1557', 'T1040'],                // Adversary-in-the-Middle, Network Sniffing
+  'SENSITIVE_FILE_EXPOSURE': ['T1552.001', 'T1083'],      // Credentials In Files, File and Directory Discovery
+  'BACKUP_FILE_FOUND': ['T1083', 'T1005'],                // File Discovery, Data from Local System
+  'SECRET_EXPOSURE': ['T1552.001', 'T1078'],              // Credentials In Files, Valid Accounts
+  'CLICKJACKING': ['T1189'],                               // Drive-by Compromise
+  'CSP_WEAKNESS': ['T1059.007'],                           // Command and Scripting: JavaScript
+  'MISSING_SRI': ['T1195.002'],                            // Supply Chain: Compromise Software Supply Chain
+  'MIXED_CONTENT': ['T1557'],                              // Adversary-in-the-Middle
+  'OPEN_REDIRECT': ['T1566.002'],                          // Phishing: Spearphishing Link
+  'PROTOTYPE_POLLUTION': ['T1059.007'],                    // JavaScript
+  'EXPOSED_ENDPOINT': ['T1190', 'T1133'],                  // Exploit Public-Facing App, External Remote Services
+  'VERBOSE_ERROR': ['T1592.004'],                          // Gather Victim Host Info: Client Configurations
+  'DOM_XSS': ['T1059.007', 'T1189'],                      // JavaScript, Drive-by Compromise
+  'HTTP_METHODS': ['T1190'],                               // Exploit Public-Facing Application
+}
+
+const PCI_DSS_MAP: Record<string, string[]> = {
+  'CORS_MISCONFIGURATION': ['PCI-DSS-6.5.9'],
+  'MISSING_SECURITY_HEADERS': ['PCI-DSS-6.5.10', 'PCI-DSS-6.6'],
+  'INSECURE_COOKIE': ['PCI-DSS-6.5.10', 'PCI-DSS-8.2.1'],
+  'INFORMATION_DISCLOSURE': ['PCI-DSS-6.5.6'],
+  'TLS_CONFIGURATION': ['PCI-DSS-4.1', 'PCI-DSS-2.2.3'],
+  'TLS_CERTIFICATE_INFO': ['PCI-DSS-4.1'],
+  'SENSITIVE_FILE_EXPOSURE': ['PCI-DSS-6.5.8', 'PCI-DSS-3.4'],
+  'SECRET_EXPOSURE': ['PCI-DSS-3.4', 'PCI-DSS-8.2.1'],
+  'CLICKJACKING': ['PCI-DSS-6.5.9'],
+  'CSP_WEAKNESS': ['PCI-DSS-6.5.7'],
+  'MISSING_SRI': ['PCI-DSS-6.5.7', 'PCI-DSS-11.5'],
+  'OPEN_REDIRECT': ['PCI-DSS-6.5.10'],
+  'PROTOTYPE_POLLUTION': ['PCI-DSS-6.5.1'],
+  'EXPOSED_ENDPOINT': ['PCI-DSS-6.5.8', 'PCI-DSS-2.2.2'],
+  'VERBOSE_ERROR': ['PCI-DSS-6.5.5', 'PCI-DSS-6.5.6'],
+  'DOM_XSS': ['PCI-DSS-6.5.7'],
+  'HTTP_METHODS': ['PCI-DSS-2.2.2'],
+}
+
+const SOC2_MAP: Record<string, string[]> = {
+  'CORS_MISCONFIGURATION': ['SOC2-CC6.1', 'SOC2-CC6.6'],
+  'MISSING_SECURITY_HEADERS': ['SOC2-CC6.1'],
+  'INSECURE_COOKIE': ['SOC2-CC6.1', 'SOC2-CC6.7'],
+  'INFORMATION_DISCLOSURE': ['SOC2-CC6.1', 'SOC2-CC7.2'],
+  'TLS_CONFIGURATION': ['SOC2-CC6.1', 'SOC2-CC6.7'],
+  'SENSITIVE_FILE_EXPOSURE': ['SOC2-CC6.1', 'SOC2-CC6.3'],
+  'SECRET_EXPOSURE': ['SOC2-CC6.1', 'SOC2-CC6.3', 'SOC2-CC6.7'],
+  'CLICKJACKING': ['SOC2-CC6.1'],
+  'CSP_WEAKNESS': ['SOC2-CC6.1', 'SOC2-CC7.1'],
+  'MISSING_SRI': ['SOC2-CC7.1', 'SOC2-CC8.1'],
+  'OPEN_REDIRECT': ['SOC2-CC6.1'],
+  'PROTOTYPE_POLLUTION': ['SOC2-CC6.1', 'SOC2-CC7.1'],
+  'EXPOSED_ENDPOINT': ['SOC2-CC6.1', 'SOC2-CC6.3'],
+  'VERBOSE_ERROR': ['SOC2-CC6.1', 'SOC2-CC7.2'],
+  'DOM_XSS': ['SOC2-CC6.1', 'SOC2-CC7.1'],
+  'HTTP_METHODS': ['SOC2-CC6.1'],
+}
+
+const BUSINESS_IMPACT_MAP: Record<string, string> = {
+  'CORS_MISCONFIGURATION': 'Attackers can steal authenticated user data cross-origin, leading to account takeover, data theft, and regulatory violations (GDPR/CCPA). Estimated breach cost: $52K–$200K per incident.',
+  'MISSING_SECURITY_HEADERS': 'Missing security headers increase exposure to XSS, clickjacking, and MIME-sniffing attacks. Users may be targeted via browser-based exploits.',
+  'INSECURE_COOKIE': 'Session cookies without proper flags can be intercepted or accessed by scripts, enabling session hijacking and unauthorized account access.',
+  'INFORMATION_DISCLOSURE': 'Exposed server versions and internal details help attackers identify specific CVEs to exploit, reducing attack complexity.',
+  'TLS_CONFIGURATION': 'Weak or missing TLS enables man-in-the-middle attacks. All transmitted data (credentials, PII, payment info) can be intercepted. Direct PCI-DSS non-compliance.',
+  'SENSITIVE_FILE_EXPOSURE': 'Exposed configuration files may contain database credentials, API keys, and internal infrastructure details. Full system compromise possible.',
+  'BACKUP_FILE_FOUND': 'Backup files may contain source code, credentials, or database dumps. Attackers can reverse-engineer the application or access databases directly.',
+  'SECRET_EXPOSURE': 'Exposed API keys and credentials enable direct unauthorized access to cloud resources, databases, and third-party services. Estimated breach cost: $100K–$500K.',
+  'CLICKJACKING': 'Users can be tricked into performing unintended actions (fund transfers, permission changes) by overlaying invisible frames on trusted pages.',
+  'CSP_WEAKNESS': 'Weak Content Security Policy allows XSS attacks to execute, enabling session theft, defacement, and malware distribution to users.',
+  'MISSING_SRI': 'If a CDN is compromised, attackers can inject malicious code into your site affecting all users. Supply chain attack vector.',
+  'MIXED_CONTENT': 'HTTP resources on HTTPS pages can be tampered with by network-level attackers, injecting malware or capturing transmitted data.',
+  'OPEN_REDIRECT': 'Attackers use legitimate-looking URLs to redirect users to phishing sites. Damages brand trust and may lead to credential theft.',
+  'PROTOTYPE_POLLUTION': 'Server-side prototype pollution can lead to remote code execution, privilege escalation, or denial of service. Critical application logic bypass.',
+  'EXPOSED_ENDPOINT': 'Admin panels and debug endpoints provide direct control over the application. Unauthorized access leads to full system compromise.',
+  'VERBOSE_ERROR': 'Detailed error messages reveal technology stack, file paths, and database structure, significantly reducing the effort needed for targeted attacks.',
+  'DOM_XSS': 'DOM XSS allows attackers to execute JavaScript in victim browsers, stealing session tokens, credentials, or performing actions on behalf of users.',
+  'HTTP_METHODS': 'Unnecessary HTTP methods (PUT/DELETE/TRACE) expand the attack surface. TRACE enables Cross-Site Tracing (XST) for credential theft.',
+}
+
+const REMEDIATION_CODE_MAP: Record<string, string> = {
+  'MISSING_SECURITY_HEADERS': JSON.stringify({
+    language: 'nginx',
+    before: '# No security headers configured\nserver {\n  listen 443 ssl;\n  ...\n}',
+    after: 'server {\n  listen 443 ssl;\n  add_header Content-Security-Policy "default-src \'self\'; script-src \'self\'" always;\n  add_header X-Content-Type-Options "nosniff" always;\n  add_header X-Frame-Options "DENY" always;\n  add_header Referrer-Policy "strict-origin-when-cross-origin" always;\n  add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;\n  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;\n}',
+  }),
+  'INSECURE_COOKIE': JSON.stringify({
+    language: 'javascript',
+    before: "res.cookie('session', token);",
+    after: "res.cookie('session', token, {\n  secure: true,\n  httpOnly: true,\n  sameSite: 'strict',\n  maxAge: 3600000,\n  path: '/'\n});",
+  }),
+  'CORS_MISCONFIGURATION': JSON.stringify({
+    language: 'javascript',
+    before: "app.use(cors({ origin: '*', credentials: true }));",
+    after: "const allowedOrigins = ['https://app.example.com', 'https://admin.example.com'];\napp.use(cors({\n  origin: (origin, callback) => {\n    if (!origin || allowedOrigins.includes(origin)) {\n      callback(null, true);\n    } else {\n      callback(new Error('Not allowed by CORS'));\n    }\n  },\n  credentials: true,\n  maxAge: 86400\n}));",
+  }),
+  'TLS_CONFIGURATION': JSON.stringify({
+    language: 'nginx',
+    before: 'ssl_protocols TLSv1 TLSv1.1 TLSv1.2;',
+    after: 'ssl_protocols TLSv1.2 TLSv1.3;\nssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384;\nssl_prefer_server_ciphers on;\nssl_session_cache shared:SSL:10m;',
+  }),
+  'CLICKJACKING': JSON.stringify({
+    language: 'javascript',
+    before: '// No frame protection',
+    after: "// Express middleware\napp.use((req, res, next) => {\n  res.setHeader('X-Frame-Options', 'DENY');\n  res.setHeader('Content-Security-Policy', \"frame-ancestors 'none'\");\n  next();\n});",
+  }),
+  'OPEN_REDIRECT': JSON.stringify({
+    language: 'javascript',
+    before: "const redirect = req.query.redirect;\nres.redirect(redirect);",
+    after: "const redirect = req.query.redirect;\nconst allowedHosts = ['example.com', 'app.example.com'];\ntry {\n  const url = new URL(redirect, `https://${req.hostname}`);\n  if (allowedHosts.includes(url.hostname)) {\n    res.redirect(url.href);\n  } else {\n    res.redirect('/');\n  }\n} catch {\n  res.redirect('/');\n}",
+  }),
+  'CSP_WEAKNESS': JSON.stringify({
+    language: 'html',
+    before: "<meta http-equiv=\"Content-Security-Policy\" content=\"script-src 'unsafe-inline' 'unsafe-eval' *\">",
+    after: "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'; script-src 'self' 'nonce-{{NONCE}}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.example.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\">",
+  }),
+  'SENSITIVE_FILE_EXPOSURE': JSON.stringify({
+    language: 'nginx',
+    before: '# No protection for sensitive files',
+    after: '# Block access to sensitive files\nlocation ~ /\\.(env|git|svn|htaccess|htpasswd) {\n  deny all;\n  return 404;\n}\nlocation ~ \\.(sql|bak|old|tar\\.gz|zip)$ {\n  deny all;\n  return 404;\n}',
+  }),
+  'VERBOSE_ERROR': JSON.stringify({
+    language: 'javascript',
+    before: "app.use((err, req, res, next) => {\n  res.status(500).json({ error: err.message, stack: err.stack });\n});",
+    after: "app.use((err, req, res, next) => {\n  console.error('Server error:', { message: err.message, stack: err.stack, url: req.url });\n  res.status(500).json({ error: 'An internal error occurred. Please try again.' });\n});",
+  }),
+  'SECRET_EXPOSURE': JSON.stringify({
+    language: 'javascript',
+    before: "const API_KEY = 'sk-live-abc123...';\nfetch('/api', { headers: { Authorization: API_KEY } });",
+    after: "// Move secrets to environment variables\n// .env file (never commit)\n// API_KEY=sk-live-abc123...\n\n// Server-side only\nconst API_KEY = process.env.API_KEY;\n// Use server-side proxy for client requests",
+  }),
+  'DOM_XSS': JSON.stringify({
+    language: 'javascript',
+    before: "element.innerHTML = location.hash.slice(1);\ndocument.write(document.referrer);",
+    after: "// Use textContent instead of innerHTML\nelement.textContent = location.hash.slice(1);\n\n// Sanitize with DOMPurify\nimport DOMPurify from 'dompurify';\nelement.innerHTML = DOMPurify.sanitize(userInput);",
+  }),
+  'PROTOTYPE_POLLUTION': JSON.stringify({
+    language: 'javascript',
+    before: "function merge(target, source) {\n  for (const key in source) {\n    target[key] = source[key];\n  }\n}",
+    after: "function safeMerge(target, source) {\n  for (const key of Object.keys(source)) {\n    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;\n    if (typeof source[key] === 'object' && source[key] !== null) {\n      target[key] = safeMerge(target[key] || {}, source[key]);\n    } else {\n      target[key] = source[key];\n    }\n  }\n  return target;\n}",
+  }),
+  'MISSING_SRI': JSON.stringify({
+    language: 'html',
+    before: '<script src="https://cdn.example.com/lib.js"></script>',
+    after: '<script src="https://cdn.example.com/lib.js" integrity="sha384-oqVuAfXRKap7fdgcCY5uykM6+R9GqQ8K/uxy9rx7HNQlGYl1kPzQho1wx4JwY8w" crossorigin="anonymous"></script>',
+  }),
+}
+
+/** Enrich a finding with compliance refs, MITRE IDs, CVSS vectors, business impact, and remediation code */
+function enrichFinding(f: BuiltinFinding): BuiltinFinding {
+  return {
+    ...f,
+    cvssVector: f.cvssVector ?? CVSS_VECTORS[f.type] ?? undefined,
+    mitreAttackIds: f.mitreAttackIds ?? MITRE_MAP[f.type] ?? [],
+    pciDssRefs: f.pciDssRefs ?? PCI_DSS_MAP[f.type] ?? [],
+    soc2Refs: f.soc2Refs ?? SOC2_MAP[f.type] ?? [],
+    businessImpact: f.businessImpact ?? BUSINESS_IMPACT_MAP[f.type] ?? undefined,
+    remediationCode: f.remediationCode ?? REMEDIATION_CODE_MAP[f.type] ?? undefined,
+    isConfirmed: f.isConfirmed ?? (f.confidenceScore >= 90),
+  }
+}
+
+// Track payloads sent globally during a scan
+let _payloadCounter = 0
+function countPayload() { _payloadCounter++ }
+
 /**
  * Run a real DAST scan against the target URL.
  * This makes actual HTTP requests — no mocking.
@@ -47,6 +247,7 @@ export async function runBuiltinScan(
 ): Promise<ScanResult> {
   const findings: BuiltinFinding[] = []
   const techStack: string[] = []
+  _payloadCounter = 0
 
   // Phase 1: Validate target is reachable (0-5%)
   onProgress?.(1, 'initializing', 'Validating target URL...')
@@ -125,21 +326,25 @@ export async function runBuiltinScan(
   onProgress?.(96, 'scanning', 'Testing for prototype pollution...')
   await checkPrototypePollution(targetUrl, findings)
 
-  // Deduplicate findings
+  // Deduplicate findings (include affectedParameter to avoid dropping legitimate variants)
   const seen = new Set<string>()
   const unique = findings.filter(f => {
-    const key = `${f.type}|${f.affectedUrl}|${f.title}`
+    const key = `${f.type}|${f.affectedUrl}|${f.title}|${f.affectedParameter ?? ''}`
     if (seen.has(key)) return false
     seen.add(key)
     return true
   })
 
-  onProgress?.(100, 'complete', `Scan complete. Found ${unique.length} issues.`)
+  // Enrich all findings with compliance refs, MITRE IDs, CVSS vectors, business impact, remediation code
+  const enriched = unique.map(enrichFinding)
+
+  onProgress?.(100, 'complete', `Scan complete. Found ${enriched.length} issues.`)
 
   return {
-    findings: unique,
+    findings: enriched,
     endpointsDiscovered: crawled.length,
     endpointsTested: crawled.length,
+    payloadsSent: _payloadCounter,
     techStack,
   }
 }
@@ -558,6 +763,7 @@ async function checkBackupFiles(targetUrl: string, findings: BuiltinFinding[], o
   for (const path of backupPaths) {
     onProgress?.(`Checking ${path}...`)
     try {
+      countPayload()
       const url = new URL(path, targetUrl).href
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 5000)
@@ -626,6 +832,7 @@ async function checkBackupFiles(targetUrl: string, findings: BuiltinFinding[], o
 async function checkCORSActive(targetUrl: string, findings: BuiltinFinding[]) {
   const evilOrigin = 'https://evil-attacker.com'
   try {
+    countPayload()
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 8000)
     const res = await fetch(targetUrl, {
@@ -657,6 +864,7 @@ async function checkCORSActive(targetUrl: string, findings: BuiltinFinding[]) {
     }
 
     // Also test null origin (can be triggered via sandboxed iframes)
+    countPayload()
     const controller2 = new AbortController()
     const timer2 = setTimeout(() => controller2.abort(), 8000)
     const res2 = await fetch(targetUrl, {
@@ -938,6 +1146,7 @@ async function checkVerboseErrors(targetUrl: string, crawled: CrawledPage[], fin
 
   for (const probe of errorProbes) {
     try {
+      countPayload()
       const testUrl = targetUrl.replace(/\/?$/, probe.suffix)
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 5000)
@@ -1030,6 +1239,7 @@ async function checkOpenRedirect(crawled: CrawledPage[], findings: BuiltinFindin
             parsed.searchParams.set(param, evilUrl)
             const testUrl = parsed.href
 
+            countPayload()
             const controller = new AbortController()
             const timer = setTimeout(() => controller.abort(), 5000)
             const res = await fetch(testUrl, {
@@ -1075,6 +1285,7 @@ async function checkPrototypePollution(targetUrl: string, findings: BuiltinFindi
 
   for (const payload of payloads) {
     try {
+      countPayload()
       const testUrl = `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}${payload}`
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 5000)
@@ -1148,6 +1359,7 @@ async function checkAdminDebugEndpoints(targetUrl: string, findings: BuiltinFind
   for (const ep of endpoints) {
     onProgress?.(`Probing ${ep.path}...`)
     try {
+      countPayload()
       const url = new URL(ep.path, targetUrl).href
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 5000)
@@ -1331,6 +1543,7 @@ async function checkHTTPMethods(pages: CrawledPage[], findings: BuiltinFinding[]
     tested.add(url)
 
     try {
+      countPayload()
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 5000)
       const res = await fetch(url, {

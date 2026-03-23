@@ -367,7 +367,7 @@ async function runBuiltinDastScan(scanId: string, targetUrl: string): Promise<vo
       }
     })
 
-    // Persist findings to database
+    // Persist findings to database with full enrichment data
     if (result.findings.length > 0) {
       await prisma.$transaction(
         result.findings.map((f: BuiltinFinding) =>
@@ -379,6 +379,7 @@ async function runBuiltinDastScan(scanId: string, targetUrl: string): Promise<vo
               cweId: f.cweId ?? null,
               severity: f.severity,
               cvssScore: f.cvssScore ?? null,
+              cvssVector: f.cvssVector ?? null,
               riskScore: f.riskScore,
               title: f.title,
               description: f.description,
@@ -389,7 +390,12 @@ async function runBuiltinDastScan(scanId: string, targetUrl: string): Promise<vo
               requestEvidence: f.requestEvidence ?? null,
               responseEvidence: f.responseEvidence ?? null,
               remediation: f.remediation,
+              remediationCode: f.remediationCode ?? null,
               confidenceScore: f.confidenceScore,
+              isConfirmed: f.isConfirmed ?? false,
+              pciDssRefs: f.pciDssRefs ?? [],
+              soc2Refs: f.soc2Refs ?? [],
+              mitreAttackIds: f.mitreAttackIds ?? [],
               status: 'OPEN',
             },
           })
@@ -426,6 +432,7 @@ async function runBuiltinDastScan(scanId: string, targetUrl: string): Promise<vo
         infoCount: sev.info,
         endpointsDiscovered: result.endpointsDiscovered,
         endpointsTested: result.endpointsTested,
+        payloadsSent: result.payloadsSent,
         techStackDetected: result.techStack,
         executiveSummary: summary,
       },

@@ -3,6 +3,7 @@ import type { ReportData } from './html-template'
 import { renderReport } from './html-template'
 import { generateJsonReport } from './json-exporter'
 import { generateCsvReport } from './csv-exporter'
+import { generatePdfReport } from './pdf-generator'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -23,7 +24,7 @@ export async function buildReportData(scanId: string, orgId?: string): Promise<R
     where: { id: scanId },
     include: {
       dastFindings: {
-        orderBy: [{ severity: 'asc' }, { cvssScore: 'desc' }],
+        orderBy: [{ cvssScore: 'desc' }, { confidenceScore: 'desc' }],
       },
     },
   })
@@ -114,14 +115,27 @@ export async function generateReport(scanId: string, format: ReportFormat, orgId
       }
     }
     case 'pdf': {
-      // For PDF, return the HTML to be rendered by the client or a PDF library
-      const html = renderReport(data)
-      return {
-        scanId,
-        format,
-        fileName: `hemisx-dast-${scanId.substring(0, 8)}-${timestamp}.html`,
-        contentType: 'text/html',
-        content: html,
+      // Generate real PDF using PDFKit
+      try {
+        const pdfBuffer = await generatePdfReport(data)
+        return {
+          scanId,
+          format,
+          fileName: `hemisx-dast-${scanId.substring(0, 8)}-${timestamp}.pdf`,
+          contentType: 'application/pdf',
+          content: pdfBuffer,
+        }
+      } catch (pdfError) {
+        // Fallback to HTML if PDF generation fails
+        console.warn('PDF generation failed, falling back to HTML:', pdfError)
+        const html = renderReport(data)
+        return {
+          scanId,
+          format,
+          fileName: `hemisx-dast-${scanId.substring(0, 8)}-${timestamp}.html`,
+          contentType: 'text/html',
+          content: html,
+        }
       }
     }
   }

@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
 
     const [findings, total] = await Promise.all([
       prisma.dastFinding.findMany({
-        where, orderBy: [{ severity: 'asc' }, { cvssScore: 'desc' }, { discoveredAt: 'desc' }],
+        where, orderBy: [{ cvssScore: 'desc' }, { confidenceScore: 'desc' }, { discoveredAt: 'desc' }],
         skip: (page - 1) * pageSize, take: pageSize,
       }),
       prisma.dastFinding.count({ where }),

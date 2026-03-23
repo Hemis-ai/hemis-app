@@ -5,6 +5,7 @@ import type { ReportData } from '@/lib/dast/reports/html-template'
 import { renderReport } from '@/lib/dast/reports/html-template'
 import { generateJsonReport } from '@/lib/dast/reports/json-exporter'
 import { generateCsvReport } from '@/lib/dast/reports/csv-exporter'
+import { generatePdfReport } from '@/lib/dast/reports/pdf-generator'
 import { isDastEngineRunning, proxyToEngine } from '@/lib/dast/engine-proxy'
 import { directScanStore } from '@/app/api/dast/scans/route'
 import { verifyAccessToken, ACCESS_COOKIE } from '@/lib/auth/jwt'
@@ -26,7 +27,7 @@ function buildDirectScanReportData(scanId: string): ReportData {
       id: s.id, name: s.name, targetUrl: s.targetUrl, scanProfile: s.scanProfile ?? 'full',
       startedAt: s.startedAt ?? null, completedAt: s.completedAt ?? null,
       endpointsDiscovered: s.endpointsDiscovered ?? 0, endpointsTested: s.endpointsTested ?? 0,
-      payloadsSent: 0, riskScore: s.riskScore ?? 0, techStackDetected: s.techStackDetected ?? [],
+      payloadsSent: s.payloadsSent ?? 0, riskScore: s.riskScore ?? 0, techStackDetected: s.techStackDetected ?? [],
     },
     counts: { critical: s.criticalCount ?? 0, high: s.highCount ?? 0, medium: s.mediumCount ?? 0, low: s.lowCount ?? 0, info: s.infoCount ?? 0, total },
     executiveSummary: s.executiveSummary ?? null,
@@ -48,7 +49,7 @@ function buildDirectScanReportData(scanId: string): ReportData {
 /**
  * Generate a report from in-memory scan data using the same report rendering functions.
  */
-function generateDirectScanReport(scanId: string, format: ReportFormat): GeneratedReport {
+async function generateDirectScanReport(scanId: string, format: ReportFormat): Promise<GeneratedReport> {
   const data = buildDirectScanReportData(scanId)
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
 
@@ -62,8 +63,14 @@ function generateDirectScanReport(scanId: string, format: ReportFormat): Generat
       return { scanId, format, fileName: `hemisx-dast-${scanId.substring(0, 8)}-${timestamp}.csv`, contentType: 'text/csv', content }
     }
     case 'pdf': {
-      const html = renderReport(data)
-      return { scanId, format, fileName: `hemisx-dast-${scanId.substring(0, 8)}-${timestamp}.html`, contentType: 'text/html', content: html }
+      try {
+        const pdfBuffer = await generatePdfReport(data)
+        return { scanId, format, fileName: `hemisx-dast-${scanId.substring(0, 8)}-${timestamp}.pdf`, contentType: 'application/pdf', content: pdfBuffer }
+      } catch {
+        // Fallback to HTML
+        const html = renderReport(data)
+        return { scanId, format, fileName: `hemisx-dast-${scanId.substring(0, 8)}-${timestamp}.html`, contentType: 'text/html', content: html }
+      }
     }
   }
 }
@@ -124,7 +131,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sca
     const dbOk = await isDatabaseReachable()
     const report = dbOk
       ? await generateReport(scanId, format, orgId)
-      : generateDirectScanReport(scanId, format)
+      : await generateDirectScanReport(scanId, format)
+
+    if (format === 'pdf' && report.contentType === 'application/pdf') {
+      const buf = report.content as Buffer
+      return new NextResponse(buf as unknown as BodyInit, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="${report.fileName}"`,
+          'Content-Length': `${buf.byteLength}`,
+        },
+      })
+    }
 
     if (format === 'json' || format === 'csv') {
       return new NextResponse(report.content as string, {
@@ -135,10 +153,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sca
       })
     }
 
-    // For PDF fallback, return HTML that can be printed/saved as PDF
+    // HTML fallback for PDF
     return new NextResponse(report.content as string, {
       headers: {
-        'Content-Type': 'text/html',
+        'Content-Type': report.contentType,
         'Content-Disposition': `inline; filename="${report.fileName}"`,
       },
     })

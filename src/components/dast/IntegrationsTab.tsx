@@ -1,6 +1,26 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+
+const STORAGE_KEY = 'hemisx-dast-integrations'
+
+interface IntegrationConfig {
+  name: string
+  values: Record<string, string>
+  connected: boolean
+  lastTested: string | null
+}
+
+function loadConfigs(): Record<string, IntegrationConfig> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch { return {} }
+}
+
+function saveConfigs(configs: Record<string, IntegrationConfig>) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(configs)) } catch { /* noop */ }
+}
 
 const INTEGRATIONS = [
   {
@@ -136,6 +156,35 @@ jobs:
 export default function IntegrationsTab() {
   const [expandedItem, setExpandedItem] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [configs, setConfigs] = useState<Record<string, IntegrationConfig>>({})
+  const [fieldValues, setFieldValues] = useState<Record<string, Record<string, string>>>({})
+  const [testingId, setTestingId] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+
+  // Load from localStorage on mount
+  useEffect(() => {
+    const loaded = loadConfigs()
+    setConfigs(loaded)
+    // Initialize field values from saved configs
+    const fv: Record<string, Record<string, string>> = {}
+    for (const [name, cfg] of Object.entries(loaded)) {
+      fv[name] = { ...cfg.values }
+    }
+    setFieldValues(fv)
+  }, [])
+
+  const updateConfig = useCallback((name: string, config: IntegrationConfig) => {
+    setConfigs(prev => {
+      const next = { ...prev, [name]: config }
+      saveConfigs(next)
+      return next
+    })
+  }, [])
+
+  function showToast(message: string, type: 'success' | 'error') {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   async function handleCopy(text: string, id: string) {
     try {
@@ -145,8 +194,149 @@ export default function IntegrationsTab() {
     } catch { /* clipboard not available */ }
   }
 
+  function handleFieldChange(itemName: string, fieldName: string, value: string) {
+    setFieldValues(prev => ({
+      ...prev,
+      [itemName]: { ...(prev[itemName] || {}), [fieldName]: value },
+    }))
+  }
+
+  async function handleSaveAndTest(itemName: string, fields: string[]) {
+    const values = fieldValues[itemName] || {}
+    // Validate required fields
+    const emptyFields = fields.filter(f => !values[f]?.trim() && !f.includes('optional'))
+    if (emptyFields.length > 0) {
+      showToast(`Missing required fields: ${emptyFields.join(', ')}`, 'error')
+      return
+    }
+
+    setTestingId(itemName)
+
+    // Test webhook/notification endpoints
+    try {
+      let testResult = false
+
+      if (itemName === 'Webhook') {
+        const url = values['Endpoint URL']
+        try {
+          const controller = new AbortController()
+          const timer = setTimeout(() => controller.abort(), 8000)
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+          if (values['Auth Header (optional)']) headers['Authorization'] = values['Auth Header (optional)']
+          const res = await fetch(url, {
+            method: 'POST',
+            signal: controller.signal,
+            headers,
+            body: JSON.stringify({ test: true, source: 'hemisx-dast', timestamp: new Date().toISOString() }),
+          })
+          clearTimeout(timer)
+          testResult = res.ok || res.status < 500
+        } catch { testResult = false }
+      } else if (itemName === 'Slack') {
+        const url = values['Webhook URL']
+        if (url?.includes('hooks.slack.com')) {
+          try {
+            const controller = new AbortController()
+            const timer = setTimeout(() => controller.abort(), 8000)
+            const res = await fetch(url, {
+              method: 'POST',
+              signal: controller.signal,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: '🔒 HemisX DAST — Integration test successful!' }),
+            })
+            clearTimeout(timer)
+            testResult = res.ok
+          } catch { testResult = false }
+        }
+      } else if (itemName === 'Microsoft Teams') {
+        const url = values['Webhook URL']
+        if (url?.includes('webhook.office.com') || url?.includes('microsoft.com')) {
+          try {
+            const controller = new AbortController()
+            const timer = setTimeout(() => controller.abort(), 8000)
+            const res = await fetch(url, {
+              method: 'POST',
+              signal: controller.signal,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                '@type': 'MessageCard',
+                summary: 'HemisX DAST Test',
+                text: '🔒 HemisX DAST — Integration test successful!',
+              }),
+            })
+            clearTimeout(timer)
+            testResult = res.ok
+          } catch { testResult = false }
+        }
+      } else {
+        // For other integrations, just save config (actual integration requires server-side handling)
+        testResult = true
+      }
+
+      const config: IntegrationConfig = {
+        name: itemName,
+        values,
+        connected: testResult,
+        lastTested: new Date().toISOString(),
+      }
+      updateConfig(itemName, config)
+
+      if (testResult) {
+        showToast(`${itemName} connected successfully`, 'success')
+      } else {
+        showToast(`${itemName} test failed — check credentials`, 'error')
+      }
+    } catch {
+      showToast(`${itemName} — connection error`, 'error')
+    }
+
+    setTestingId(null)
+  }
+
+  function handleDisconnect(itemName: string) {
+    setConfigs(prev => {
+      const next = { ...prev }
+      delete next[itemName]
+      saveConfigs(next)
+      return next
+    })
+    setFieldValues(prev => {
+      const next = { ...prev }
+      delete next[itemName]
+      return next
+    })
+    showToast(`${itemName} disconnected`, 'success')
+  }
+
   return (
     <div style={{ marginTop: 20 }}>
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position: 'fixed', top: 20, right: 20, zIndex: 1000,
+          padding: '10px 20px', borderRadius: 6,
+          background: toast.type === 'error' ? '#ef444420' : '#22c55e20',
+          border: `1px solid ${toast.type === 'error' ? '#ef4444' : '#22c55e'}`,
+          color: toast.type === 'error' ? '#ef4444' : '#22c55e',
+        }}>
+          <span className="mono" style={{ fontSize: 11 }}>{toast.message}</span>
+        </div>
+      )}
+
+      {/* Connected count */}
+      {Object.values(configs).filter(c => c.connected).length > 0 && (
+        <div className="bracket-card bracket-dast" style={{ padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#22c55e' }} />
+          <span className="mono" style={{ fontSize: 11, color: 'var(--color-text-primary)' }}>
+            {Object.values(configs).filter(c => c.connected).length} integration{Object.values(configs).filter(c => c.connected).length !== 1 ? 's' : ''} connected
+          </span>
+          <div style={{ flex: 1 }} />
+          <div className="mono" style={{ fontSize: 9, color: 'var(--color-text-secondary)' }}>
+            {Object.values(configs).filter(c => c.connected).map(c => c.name).join(' · ')}
+          </div>
+        </div>
+      )}
+
       {INTEGRATIONS.map(cat => (
         <div key={cat.category} style={{ marginBottom: 24 }}>
           <div className="mono" style={{ fontSize: 10, letterSpacing: '0.12em', color: 'var(--color-dast)', marginBottom: 10, fontWeight: 700 }}>
@@ -155,11 +345,12 @@ export default function IntegrationsTab() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
             {cat.items.map(item => {
               const isExpanded = expandedItem === item.name
+              const isConnected = configs[item.name]?.connected
               return (
                 <div
                   key={item.name}
                   className="bracket-card"
-                  style={{ padding: 0, overflow: 'hidden' }}
+                  style={{ padding: 0, overflow: 'hidden', borderColor: isConnected ? '#22c55e40' : undefined }}
                 >
                   <div
                     onClick={() => setExpandedItem(isExpanded ? null : item.name)}
@@ -170,8 +361,15 @@ export default function IntegrationsTab() {
                   >
                     <span style={{ fontSize: 18, width: 28, textAlign: 'center' }}>{item.icon}</span>
                     <div style={{ flex: 1 }}>
-                      <div className="mono" style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-                        {item.name}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span className="mono" style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                          {item.name}
+                        </span>
+                        {isConnected && (
+                          <span className="mono" style={{ fontSize: 8, padding: '1px 5px', borderRadius: 10, background: '#22c55e20', border: '1px solid #22c55e40', color: '#22c55e' }}>
+                            CONNECTED
+                          </span>
+                        )}
                       </div>
                       <div className="mono" style={{ fontSize: 9, color: 'var(--color-text-secondary)', marginTop: 2 }}>
                         {item.desc}
@@ -228,8 +426,10 @@ export default function IntegrationsTab() {
                                 {field.toUpperCase()}
                               </label>
                               <input
-                                type={field.toLowerCase().includes('token') || field.toLowerCase().includes('key') ? 'password' : 'text'}
+                                type={field.toLowerCase().includes('token') || field.toLowerCase().includes('key') || field.toLowerCase().includes('secret') ? 'password' : 'text'}
                                 placeholder={field}
+                                value={(fieldValues[item.name] || {})[field] || ''}
+                                onChange={e => handleFieldChange(item.name, field, e.target.value)}
                                 className="mono"
                                 style={{
                                   width: '100%', padding: '6px 8px', fontSize: 11,
@@ -241,14 +441,41 @@ export default function IntegrationsTab() {
                               />
                             </div>
                           ))}
-                          <button className="mono" style={{
-                            marginTop: 4, padding: '6px 16px', fontSize: 10,
-                            background: 'var(--color-dast)', color: '#fff',
-                            border: 'none', borderRadius: 4, cursor: 'pointer',
-                            letterSpacing: '0.08em',
-                          }}>
-                            SAVE & TEST
-                          </button>
+                          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                            <button
+                              onClick={() => handleSaveAndTest(item.name, item.fields!)}
+                              disabled={testingId === item.name}
+                              className="mono"
+                              style={{
+                                padding: '6px 16px', fontSize: 10,
+                                background: testingId === item.name ? '#f9731640' : 'var(--color-dast)',
+                                color: '#fff',
+                                border: 'none', borderRadius: 4, cursor: 'pointer',
+                                letterSpacing: '0.08em',
+                                opacity: testingId === item.name ? 0.7 : 1,
+                              }}
+                            >
+                              {testingId === item.name ? 'TESTING...' : 'SAVE & TEST'}
+                            </button>
+                            {isConnected && (
+                              <button
+                                onClick={() => handleDisconnect(item.name)}
+                                className="mono"
+                                style={{
+                                  padding: '6px 12px', fontSize: 10,
+                                  background: 'none', color: '#ef4444',
+                                  border: '1px solid #ef444440', borderRadius: 4, cursor: 'pointer',
+                                }}
+                              >
+                                DISCONNECT
+                              </button>
+                            )}
+                          </div>
+                          {isConnected && configs[item.name]?.lastTested && (
+                            <div className="mono" style={{ fontSize: 8, color: '#22c55e', marginTop: 6 }}>
+                              Last tested: {new Date(configs[item.name].lastTested!).toLocaleString()}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
           highCount: entry.scan.highCount ?? 0, mediumCount: entry.scan.mediumCount ?? 0,
           lowCount: entry.scan.lowCount ?? 0, infoCount: entry.scan.infoCount ?? 0,
           endpointsDiscovered: entry.scan.endpointsDiscovered ?? 0,
-          endpointsTested: entry.scan.endpointsTested ?? 0, payloadsSent: 0,
+          endpointsTested: entry.scan.endpointsTested ?? 0, payloadsSent: entry.scan.payloadsSent ?? 0,
           completedAt: entry.scan.completedAt ?? null,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           findings: entry.findings.map((f: any) => ({

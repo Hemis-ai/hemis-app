@@ -137,20 +137,43 @@ export async function POST(req: NextRequest) {
     // Return scan immediately, then the frontend will poll /api/dast/scans/[id] for progress
     // But since we don't have a DB, we'll run the scan and store results in-memory
     const directScanPromise = runBuiltinScan(targetUrl).then(result => {
+      const criticalCount = result.findings.filter(f => f.severity === 'CRITICAL').length
+      const highCount = result.findings.filter(f => f.severity === 'HIGH').length
+      const mediumCount = result.findings.filter(f => f.severity === 'MEDIUM').length
+      const lowCount = result.findings.filter(f => f.severity === 'LOW').length
+      const infoCount = result.findings.filter(f => f.severity === 'INFO').length
+      const riskScore = Math.min(100, criticalCount * 25 + highCount * 10 + mediumCount * 3)
+
+      // Generate executive summary
+      const keyFindings = result.findings
+        .filter(f => f.severity === 'CRITICAL' || f.severity === 'HIGH')
+        .map(f => `- **${f.title}** (${f.severity}) — ${f.affectedUrl}`)
+        .join('\n') || '- No critical or high severity issues found'
+      const summary = `## Scan Overview\nBuilt-in DAST scan of **${targetUrl}** identified **${result.findings.length} issues** across ${criticalCount} critical, ${highCount} high, ${mediumCount} medium, ${lowCount} low, and ${infoCount} informational severity levels.\n\n## Key Findings\n${keyFindings}\n\n## Technology Stack\n${result.techStack.length > 0 ? result.techStack.join(', ') : 'Not detected'}`
+
       directScanStore.set(scanId, {
         scan: {
           ...scan, status: 'COMPLETED', progress: 100, currentPhase: 'complete',
-          completedAt: new Date().toISOString(), riskScore: Math.min(100, result.findings.filter(f => f.severity === 'CRITICAL').length * 25 + result.findings.filter(f => f.severity === 'HIGH').length * 10 + result.findings.filter(f => f.severity === 'MEDIUM').length * 3),
-          criticalCount: result.findings.filter(f => f.severity === 'CRITICAL').length,
-          highCount: result.findings.filter(f => f.severity === 'HIGH').length,
-          mediumCount: result.findings.filter(f => f.severity === 'MEDIUM').length,
-          lowCount: result.findings.filter(f => f.severity === 'LOW').length,
-          infoCount: result.findings.filter(f => f.severity === 'INFO').length,
+          completedAt: new Date().toISOString(), riskScore,
+          criticalCount, highCount, mediumCount, lowCount, infoCount,
           endpointsDiscovered: result.endpointsDiscovered, endpointsTested: result.endpointsTested,
+          payloadsSent: result.payloadsSent,
           techStackDetected: result.techStack,
-          executiveSummary: `Built-in scan of ${targetUrl} found ${result.findings.length} issues.`,
+          executiveSummary: summary,
         },
-        findings: result.findings.map((f, i) => ({ id: `${scanId}-f${i}`, scanId, ...f })),
+        findings: result.findings.map((f, i) => ({
+          id: `${scanId}-f${i}`, scanId,
+          ...f,
+          // Ensure all DastFinding fields are present for reports/dashboard
+          cvssVector: f.cvssVector ?? null,
+          remediationCode: f.remediationCode ?? null,
+          isConfirmed: f.isConfirmed ?? false,
+          pciDssRefs: f.pciDssRefs ?? [],
+          soc2Refs: f.soc2Refs ?? [],
+          mitreAttackIds: f.mitreAttackIds ?? [],
+          businessImpact: f.businessImpact ?? null,
+          status: 'OPEN',
+        })),
       })
     }).catch(err => {
       directScanStore.set(scanId, {

@@ -232,6 +232,16 @@ export default function RemediationTab({ findings }: RemediationTabProps) {
                       {id}
                     </span>
                   ))}
+                  {f.pciDssRefs?.map(ref => (
+                    <span key={ref} className="mono" style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: '#0ea5e915', border: '1px solid #0ea5e940', color: '#0ea5e9' }}>
+                      {ref}
+                    </span>
+                  ))}
+                  {f.soc2Refs?.map(ref => (
+                    <span key={ref} className="mono" style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: '#14b8a615', border: '1px solid #14b8a640', color: '#14b8a6' }}>
+                      {ref}
+                    </span>
+                  ))}
                 </div>
               </div>
             )}
