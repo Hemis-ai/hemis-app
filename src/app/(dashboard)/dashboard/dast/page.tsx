@@ -1,7 +1,17 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react'
 import type { Severity, DastScan, DastFinding, DastScanProgress } from '@/lib/types'
+import PostureCard from '@/components/dast/PostureCard'
+import OWASPHeatmap from '@/components/dast/OWASPHeatmap'
+import AttackSurfaceMap from '@/components/dast/AttackSurfaceMap'
+import CVSSDistribution from '@/components/dast/CVSSDistribution'
+import MitreAttackMatrix from '@/components/dast/MitreAttackMatrix'
+import RemediationTab from '@/components/dast/RemediationTab'
+import MonitoringTab from '@/components/dast/MonitoringTab'
+import IntegrationsTab from '@/components/dast/IntegrationsTab'
+
+const AttackGraph3D = lazy(() => import('@/components/dast/AttackGraph3D'))
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -31,7 +41,7 @@ const PHASE_LABELS: Record<string, string> = {
   failed: 'Failed',
 }
 
-type TopTab = 'scanner' | 'history' | 'attack-chains' | 'compliance' | 'compare' | 'report'
+type TopTab = 'scanner' | 'history' | 'attack-chains' | 'attack-map' | 'compliance' | 'remediation' | 'monitoring' | 'integrations' | 'compare' | 'report'
 type AuthType = 'none' | 'bearer' | 'apikey' | 'oauth2' | 'cookie' | 'header' | 'form'
 
 // ─── Markdown Renderer ──────────────────────────────────────────────────────
@@ -570,7 +580,11 @@ export default function DastPage() {
           { id: 'scanner' as TopTab, label: 'SCANNER' },
           { id: 'history' as TopTab, label: 'HISTORY' },
           { id: 'attack-chains' as TopTab, label: 'ATTACK CHAINS' },
+          { id: 'attack-map' as TopTab, label: 'ATTACK MAP' },
           { id: 'compliance' as TopTab, label: 'COMPLIANCE' },
+          { id: 'remediation' as TopTab, label: 'REMEDIATION' },
+          { id: 'monitoring' as TopTab, label: 'MONITORING' },
+          { id: 'integrations' as TopTab, label: 'INTEGRATIONS' },
           { id: 'compare' as TopTab, label: 'COMPARE' },
           { id: 'report' as TopTab, label: 'REPORT' },
         ]).map(p => (
@@ -1016,6 +1030,27 @@ export default function DastPage() {
             </div>
           ) : (
             <>
+              {/* Security Posture Overview */}
+              <PostureCard scans={scans} findings={findings} />
+
+              {/* Visualizations Row */}
+              {selectedScan && scanFindings.length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+                  <div className="bracket-card" style={{ padding: 16 }}>
+                    <OWASPHeatmap findings={scanFindings} onCategoryClick={(cat) => { setSeverityFilter('ALL'); setActiveTab('history') }} />
+                  </div>
+                  <div className="bracket-card" style={{ padding: 16 }}>
+                    <CVSSDistribution findings={scanFindings} />
+                  </div>
+                </div>
+              )}
+
+              {selectedScan && scanFindings.length > 0 && (
+                <div className="bracket-card" style={{ padding: 16, marginBottom: 20 }}>
+                  <AttackSurfaceMap findings={scanFindings} onEndpointClick={() => {}} />
+                </div>
+              )}
+
               {/* Scan Table */}
               <div style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
                 <div className="mono" style={{
@@ -1227,6 +1262,65 @@ export default function DastPage() {
             <CompliancePanel complianceData={complianceData} />
           )}
         </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── ATTACK MAP TAB (3D) ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'attack-map' && (
+        <div style={{ marginTop: 20 }}>
+          {!selectedScan ? (
+            <div style={{ textAlign: 'center', padding: '50px 20px', color: 'var(--color-text-dim)' }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 8 }}>No scan selected</div>
+              <div className="mono" style={{ fontSize: 11 }}>Select a scan from the HISTORY tab to view the 3D attack map.</div>
+            </div>
+          ) : (
+            <>
+              <MitreAttackMatrix findings={scanFindings} />
+              <Suspense fallback={
+                <div style={{ textAlign: 'center', padding: 60, color: 'var(--color-text-secondary)' }}>
+                  <div className="mono" style={{ fontSize: 12 }}>Loading 3D Attack Graph...</div>
+                </div>
+              }>
+                <AttackGraph3D
+                  findings={scanFindings}
+                  attackChains={correlationData}
+                  onFindingClick={(f) => setSelectedFinding(f)}
+                />
+              </Suspense>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── REMEDIATION TAB ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'remediation' && (
+        <div style={{ marginTop: 20 }}>
+          {!selectedScan ? (
+            <div style={{ textAlign: 'center', padding: '50px 20px', color: 'var(--color-text-dim)' }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 8 }}>No scan selected</div>
+              <div className="mono" style={{ fontSize: 11 }}>Select a scan from the HISTORY tab to view remediation priorities.</div>
+            </div>
+          ) : (
+            <RemediationTab findings={scanFindings} />
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── MONITORING TAB ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'monitoring' && (
+        <MonitoringTab scans={scans} />
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── INTEGRATIONS TAB ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'integrations' && (
+        <IntegrationsTab />
       )}
 
       {/* ══════════════════════════════════════════════════════════════════════ */}
