@@ -117,13 +117,13 @@ export default function HemisPage() {
       }}>
         {/* Header */}
         <div style={{ padding:'18px 18px 14px', borderBottom:'1px solid var(--color-border)' }}>
-          <div className="mono" style={{ fontSize:10, letterSpacing:'0.15em', color:'var(--color-hemis)', textTransform:'uppercase', marginBottom:4 }}>
-            [ HEMIS v2.4 · AI RED TEAM ENGINE ]
+          <div className="mono" style={{ fontSize:10, letterSpacing:'0.12em', color:'var(--color-hemis)', textTransform:'uppercase', marginBottom:4 }}>
+            HEMIS v2.4 · AI Red Team Engine
           </div>
           <h2 className="display" style={{ fontSize:16, fontWeight:700, color:'var(--color-text-primary)', margin:0 }}>
             Attack Console
           </h2>
-          <p style={{ fontSize:11, color:'var(--color-text-dim)', margin:'3px 0 0' }}>
+          <p style={{ fontSize:12, color:'var(--color-text-dim)', margin:'3px 0 0' }}>
             Describe an attack scenario in natural language
           </p>
         </div>

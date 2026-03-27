@@ -109,44 +109,41 @@ export default function ScannerPage() {
         {/* Header */}
         <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:24 }}>
           <div>
-            <div className="mono" style={{ fontSize:10, letterSpacing:'0.15em', color:'var(--color-scanner)', textTransform:'uppercase', marginBottom:5 }}>
-              [ CLOUD SECURITY POSTURE MANAGEMENT ]
+            <div className="mono" style={{ fontSize:10, letterSpacing:'0.12em', color:'var(--color-scanner)', textTransform:'uppercase', marginBottom:5 }}>
+              Cloud Security Posture Management
             </div>
             <h1 className="display" style={{ fontSize:20, fontWeight:700, color:'var(--color-text-primary)', margin:0 }}>
               Cloud Scanner
             </h1>
-            <p style={{ color:'var(--color-text-secondary)', margin:'4px 0 0', fontSize:12 }}>
+            <p style={{ color:'var(--color-text-secondary)', margin:'4px 0 0', fontSize:13 }}>
               AWS account 482910 · us-east-1, us-west-2 · 247 resources
             </p>
           </div>
 
           <div style={{ display:'flex', gap:10, alignItems:'center' }}>
             {phase === 'done' && (
-              <button onClick={() => setReportVisible(true)} style={{
-                background:'transparent', border:'1px solid var(--color-scanner)',
-                color:'var(--color-scanner)', padding:'9px 16px', cursor:'pointer',
-                fontFamily:'var(--font-mono)', fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase',
-              }}>
-                GENERATE REPORT ▤
+              <button onClick={() => setReportVisible(true)} className="btn btn-ghost" style={{ borderColor:'var(--color-scanner)', color:'var(--color-scanner)' }}>
+                Generate Report
               </button>
             )}
             <button
               onClick={startScan}
               disabled={phase==='scanning'}
+              className="btn"
               style={{
                 background: phase==='scanning' ? 'var(--color-bg-elevated)' : 'var(--color-scanner)',
                 color: phase==='scanning' ? 'var(--color-text-dim)' : '#050a06',
-                border:'none', padding:'9px 18px', cursor: phase==='scanning' ? 'not-allowed' : 'pointer',
-                fontFamily:'var(--font-mono)', fontSize:10, fontWeight:600, letterSpacing:'0.12em', textTransform:'uppercase',
-                transition:'all 0.15s',
+                borderColor: phase==='scanning' ? 'var(--color-border)' : 'var(--color-scanner)',
+                cursor: phase==='scanning' ? 'not-allowed' : 'pointer',
+                opacity: phase==='scanning' ? 0.7 : 1,
               }}
             >
               {phase==='scanning' ? (
                 <span style={{ display:'flex', alignItems:'center', gap:7 }}>
                   <span className="dot-live" style={{ width:5, height:5 }} />
-                  SCANNING...
+                  Scanning…
                 </span>
-              ) : phase==='done' ? '▶ RESCAN' : '▶ RUN SCAN'}
+              ) : phase==='done' ? 'Re-scan' : 'Run Scan'}
             </button>
           </div>
         </div>

@@ -3,51 +3,58 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
+import {
+  Cloud, Shield, Code2, Globe, Eye, Scan, ShieldCheck,
+  LayoutDashboard, FileText, Settings, ChevronRight,
+  Zap, LogOut,
+} from 'lucide-react'
 
-// ── Feature flags (set via env vars, default ON in dev) ──────────────────────
+// ── Feature flags ─────────────────────────────────────────────────────────────
 const FF = {
-  sast:      process.env.NEXT_PUBLIC_FEATURE_SAST      !== 'false',
-  dast:      process.env.NEXT_PUBLIC_FEATURE_DAST      !== 'false',
-  wbrt:      process.env.NEXT_PUBLIC_FEATURE_WBRT      !== 'false',
-  bbrt:      process.env.NEXT_PUBLIC_FEATURE_BBRT      !== 'false',
-  blueteam:  process.env.NEXT_PUBLIC_FEATURE_BLUETEAM  !== 'false',
-  scanner:   process.env.NEXT_PUBLIC_FEATURE_SCANNER   !== 'false',
+  sast:     process.env.NEXT_PUBLIC_FEATURE_SAST     !== 'false',
+  dast:     process.env.NEXT_PUBLIC_FEATURE_DAST     !== 'false',
+  wbrt:     process.env.NEXT_PUBLIC_FEATURE_WBRT     !== 'false',
+  bbrt:     process.env.NEXT_PUBLIC_FEATURE_BBRT     !== 'false',
+  blueteam: process.env.NEXT_PUBLIC_FEATURE_BLUETEAM !== 'false',
+  scanner:  process.env.NEXT_PUBLIC_FEATURE_SCANNER  !== 'false',
 }
 
 const PRODUCTS = [
   ...(FF.scanner ? [{
     id: 'scanner',
-    label: 'CLOUD SCANNER',
+    label: 'Cloud Scanner',
     href: '/dashboard/scanner',
     color: 'var(--color-scanner)',
-    icon: '◈',
+    Icon: Cloud,
+    children: undefined as undefined,
   }] : []),
   {
     id: 'hemis',
     label: 'HEMIS',
     href: '/dashboard/hemis',
     color: 'var(--color-hemis)',
-    icon: '◉',
+    Icon: Shield,
     children: [
-      ...(FF.sast ? [{ id: 'sast', label: 'SAST', href: '/dashboard/hemis/sast', icon: '⬡', color: 'var(--color-hemis)' }] : []),
-      ...(FF.dast ? [{ id: 'dast', label: 'DAST', href: '/dashboard/hemis/dast', icon: '◇', color: 'var(--color-dast)' }] : []),
-      ...(FF.wbrt ? [{ id: 'wbrt', label: 'WHITE BOX RT', href: '/dashboard/hemis/wbrt', icon: '◉', color: 'var(--color-wbrt)' }] : []),
-      ...(FF.bbrt ? [{ id: 'bbrt', label: 'BLACK BOX RT', href: '/dashboard/hemis/bbrt', icon: '◌', color: 'var(--color-bbrt)' }] : []),
+      ...(FF.sast ? [{ id: 'sast', label: 'SAST',         href: '/dashboard/hemis/sast', Icon: Code2,  color: 'var(--color-sast)' }] : []),
+      ...(FF.dast ? [{ id: 'dast', label: 'DAST',         href: '/dashboard/hemis/dast', Icon: Globe,  color: 'var(--color-dast)' }] : []),
+      ...(FF.wbrt ? [{ id: 'wbrt', label: 'White Box RT', href: '/dashboard/hemis/wbrt', Icon: Eye,    color: 'var(--color-wbrt)' }] : []),
+      ...(FF.bbrt ? [{ id: 'bbrt', label: 'Black Box RT', href: '/dashboard/hemis/bbrt', Icon: Scan,   color: 'var(--color-bbrt)' }] : []),
     ],
   },
   ...(FF.blueteam ? [{
     id: 'blueteam',
-    label: 'BLUE TEAM',
+    label: 'Blue Team',
     href: '/dashboard/blueteam',
     color: 'var(--color-blueteam)',
-    icon: '◎',
+    Icon: ShieldCheck,
+    children: undefined as undefined,
   }] : []),
 ]
 
 const NAV_ITEMS = [
-  { label: 'OVERVIEW',   href: '/dashboard',          icon: '▦' },
-  { label: 'REPORTS',    href: '/dashboard/reports',   icon: '▤' },
-  { label: 'SETTINGS',   href: '/dashboard/settings',  icon: '◌' },
+  { label: 'Overview',  href: '/dashboard',          Icon: LayoutDashboard },
+  { label: 'Reports',   href: '/dashboard/reports',  Icon: FileText },
+  { label: 'Settings',  href: '/dashboard/settings', Icon: Settings },
 ]
 
 export default function Sidebar() {
@@ -56,12 +63,10 @@ export default function Sidebar() {
     path.startsWith('/dashboard/hemis')
   )
 
-  const activeProduct = PRODUCTS.find(p => path.startsWith(p.href))
-
   return (
     <aside style={{
-      width: 236,
-      minWidth: 236,
+      width: 240,
+      minWidth: 240,
       background: 'var(--color-bg-surface)',
       borderRight: '1px solid var(--color-border)',
       display: 'flex',
@@ -72,120 +77,83 @@ export default function Sidebar() {
       flexShrink: 0,
     }}>
 
-      {/* Logo */}
-      <div style={{
-        padding: '22px 18px 18px',
-        borderBottom: '1px solid var(--color-border)',
-      }}>
-        <Link href="/dashboard" style={{ textDecoration:'none', display:'flex', alignItems:'center', gap:8 }}>
-          <span style={{ fontSize:20 }}>⚡</span>
-          <span className="display" style={{ fontSize:16, fontWeight:700, color:'var(--color-text-primary)', letterSpacing:'-0.02em' }}>
-            HemisX
-          </span>
-          <span className="mono" style={{ fontSize:10, color:'var(--color-text-secondary)', letterSpacing:'0.12em', marginLeft:2 }}>
-            CONSOLE
-          </span>
+      {/* ── Logo ── */}
+      <div style={{ padding: '18px 16px 16px', borderBottom: '1px solid var(--color-border)' }}>
+        <Link href="/dashboard" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            width: 30, height: 30,
+            background: 'var(--color-yellow)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <Zap size={15} color="#0a0d0f" strokeWidth={2.5} />
+          </div>
+          <div>
+            <div className="display" style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+              HemisX
+            </div>
+            <div className="mono" style={{ fontSize: 9, color: 'var(--color-text-dim)', letterSpacing: '0.14em', textTransform: 'uppercase' }}>
+              Console
+            </div>
+          </div>
         </Link>
-        {/* Uptime indicator */}
-        <div style={{ marginTop:10, display:'flex', alignItems:'center', gap:6 }}>
-          <span className="dot-live" style={{ width:5, height:5 }} />
-          <span className="mono" style={{ fontSize:10, color:'var(--color-text-dim)', letterSpacing:'0.08em' }}>
-            ALL SYSTEMS OPERATIONAL
-          </span>
-        </div>
       </div>
 
-      {/* Products */}
-      <div style={{ padding:'18px 12px 10px', overflowY:'auto', flex:1 }}>
-        <div className="mono" style={{ fontSize:10, letterSpacing:'0.15em', color:'var(--color-text-dim)', textTransform:'uppercase', padding:'0 6px', marginBottom:8 }}>
-          Products
-        </div>
+      {/* ── Navigation ── */}
+      <div style={{ padding: '10px 8px', overflowY: 'auto', flex: 1 }}>
+
+        {/* Products */}
+        <SectionLabel>Products</SectionLabel>
         {PRODUCTS.map(p => {
           const isActive = path.startsWith(p.href) ||
             (p.children?.some(c => path.startsWith(c.href)) ?? false)
           const hasChildren = p.children && p.children.length > 0
 
           return (
-            <div key={p.id}>
-              {/* Parent item */}
-              <div
-                style={{ display:'flex', alignItems:'center', marginBottom:2, cursor:'pointer' }}
-              >
+            <div key={p.id} style={{ marginBottom: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
                 <Link
                   href={p.href}
-                  style={{ textDecoration:'none', display:'flex', alignItems:'center', gap:8, flex:1, padding:'8px 8px' }}
+                  style={{ textDecoration: 'none', flex: 1 }}
                   onClick={() => { if (hasChildren) setHemisExpanded(true) }}
                 >
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    flex: 1,
-                    position: 'relative',
-                  }}>
-                    {isActive && (
-                      <div style={{
-                        position:'absolute', left:-8, top:-8, bottom:-8, width:2,
-                        background: p.color,
-                      }} />
-                    )}
-                    <span style={{ fontSize:13, color: isActive ? p.color : 'var(--color-text-dim)', lineHeight:1, flexShrink:0 }}>
-                      {p.icon}
-                    </span>
-                    <div className="mono" style={{
-                      fontSize:9, fontWeight:700,
-                      letterSpacing:'0.08em',
-                      color: isActive ? p.color : 'var(--color-text-secondary)',
-                      textTransform:'uppercase',
-                      flex: 1,
-                    }}>
+                  <NavItem active={isActive} accentColor={p.color}>
+                    <p.Icon size={15} strokeWidth={1.75} style={{ flexShrink: 0, color: isActive ? p.color : 'var(--color-text-dim)' }} />
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--color-text-primary)' : 'var(--color-text-secondary)' }}>
                       {p.label}
-                    </div>
-                    {hasChildren && (
-                      <span
-                        className="mono"
-                        onClick={e => { e.preventDefault(); e.stopPropagation(); setHemisExpanded(!hemisExpanded) }}
-                        style={{ fontSize:8, color:'var(--color-text-dim)', transition:'transform 0.15s', transform: hemisExpanded ? 'rotate(90deg)' : 'rotate(0deg)', padding:'2px 4px', cursor:'pointer' }}
-                      >
-                        ▸
-                      </span>
+                    </span>
+                    {isActive && !hasChildren && (
+                      <div style={{ width: 4, height: 4, borderRadius: '50%', background: p.color, flexShrink: 0 }} />
                     )}
-                  </div>
+                  </NavItem>
                 </Link>
+                {hasChildren && (
+                  <button
+                    onClick={() => setHemisExpanded(!hemisExpanded)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px 6px', display: 'flex', alignItems: 'center', color: 'var(--color-text-dim)' }}
+                  >
+                    <ChevronRight size={13} style={{ transition: 'transform 0.15s', transform: hemisExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }} />
+                  </button>
+                )}
               </div>
 
-              {/* Children (sub-products) */}
+              {/* Sub-items */}
               {hasChildren && hemisExpanded && (
-                <div style={{ paddingLeft:20, marginBottom:4 }}>
+                <div style={{ paddingLeft: 12, marginTop: 1, marginBottom: 2 }}>
                   {p.children!.map(child => {
                     const childActive = path.startsWith(child.href)
                     return (
-                      <Link key={child.id} href={child.href} style={{ textDecoration:'none', display:'block', marginBottom:1 }}>
+                      <Link key={child.id} href={child.href} style={{ textDecoration: 'none', display: 'block', marginBottom: 1 }}>
                         <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          padding: '5px 8px',
-                          background: childActive ? `${child.color}10` : 'transparent',
-                          border: childActive ? `1px solid ${child.color}22` : '1px solid transparent',
-                          transition: 'all 0.12s',
-                          position: 'relative',
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          padding: '6px 8px',
+                          borderRadius: 4,
+                          background: childActive ? `color-mix(in srgb, ${child.color} 10%, transparent)` : 'transparent',
+                          transition: 'background 0.12s',
                         }}>
-                          {childActive && (
-                            <div style={{
-                              position:'absolute', left:0, top:0, bottom:0, width:2,
-                              background: child.color,
-                            }} />
-                          )}
-                          <span style={{ fontSize:10, color: childActive ? child.color : 'var(--color-text-dim)', lineHeight:1 }}>
-                            {child.icon}
-                          </span>
-                          <span className="mono" style={{
-                            fontSize:8, fontWeight:600,
-                            letterSpacing:'0.08em',
-                            color: childActive ? child.color : 'var(--color-text-dim)',
-                            textTransform:'uppercase',
-                          }}>
+                          <div style={{ width: 2, height: 14, background: childActive ? child.color : 'var(--color-border)', borderRadius: 1, flexShrink: 0 }} />
+                          <child.Icon size={12} strokeWidth={1.75} style={{ color: childActive ? child.color : 'var(--color-text-dim)', flexShrink: 0 }} />
+                          <span style={{ fontSize: 12, color: childActive ? 'var(--color-text-primary)' : 'var(--color-text-secondary)', fontWeight: childActive ? 500 : 400 }}>
                             {child.label}
                           </span>
                         </div>
@@ -199,74 +167,75 @@ export default function Sidebar() {
         })}
 
         {/* Divider */}
-        <div style={{ margin:'12px 4px 8px', borderTop:'1px solid var(--color-border)' }} />
+        <div style={{ margin: '10px 4px', borderTop: '1px solid var(--color-border)' }} />
 
-        {/* Nav */}
-        <div className="mono" style={{ fontSize:10, letterSpacing:'0.15em', color:'var(--color-text-dim)', textTransform:'uppercase', padding:'0 6px', marginBottom:8 }}>
-          Navigation
-        </div>
+        {/* General nav */}
+        <SectionLabel>Navigation</SectionLabel>
         {NAV_ITEMS.map(item => {
           const isActive = path === item.href
           return (
-            <Link key={item.href} href={item.href} style={{ textDecoration:'none', display:'block', marginBottom:2 }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '8px 10px',
-                background: isActive ? 'var(--color-bg-elevated)' : 'transparent',
-                border: isActive ? '1px solid var(--color-border-bright)' : '1px solid transparent',
-                transition: 'all 0.12s',
-              }}>
-                <span style={{ fontSize:12, color: isActive ? 'var(--color-yellow)' : 'var(--color-text-dim)' }}>
-                  {item.icon}
-                </span>
-                <span className="mono" style={{
-                  fontSize:11,
-                  fontWeight: 600,
-                  letterSpacing:'0.1em',
-                  textTransform:'uppercase',
-                  color: isActive ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                }}>
+            <Link key={item.href} href={item.href} style={{ textDecoration: 'none', display: 'block', marginBottom: 1 }}>
+              <NavItem active={isActive} accentColor="var(--color-yellow)">
+                <item.Icon size={15} strokeWidth={1.75} style={{ flexShrink: 0, color: isActive ? 'var(--color-yellow)' : 'var(--color-text-dim)' }} />
+                <span style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--color-text-primary)' : 'var(--color-text-secondary)' }}>
                   {item.label}
                 </span>
-              </div>
+              </NavItem>
             </Link>
           )
         })}
       </div>
 
-      {/* Bottom — user */}
-      <div style={{
-        padding:'14px 18px',
-        borderTop:'1px solid var(--color-border)',
-        display:'flex',
-        alignItems:'center',
-        gap:10,
-      }}>
+      {/* ── User ── */}
+      <div style={{ padding: '12px 14px', borderTop: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{
-          width:30, height:30, borderRadius:'50%',
-          background:'var(--color-yellow-dim)',
-          border:'1px solid var(--color-yellow)',
-          display:'flex', alignItems:'center', justifyContent:'center',
-          flexShrink:0,
+          width: 32, height: 32, borderRadius: '50%',
+          background: 'var(--color-yellow-dim)',
+          border: '1px solid var(--color-yellow)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
+          fontSize: 13, fontWeight: 600, color: 'var(--color-yellow)',
         }}>
-          <span style={{ fontSize:12, color:'var(--color-yellow)', fontWeight:700 }}>A</span>
+          A
         </div>
-        <div style={{ minWidth:0, flex:1 }}>
-          <div style={{ fontSize:13, fontWeight:500, color:'var(--color-text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             Alex M.
           </div>
-          <div className="mono" style={{ fontSize:10, color:'var(--color-text-dim)', letterSpacing:'0.06em' }}>
+          <div style={{ fontSize: 11, color: 'var(--color-text-dim)' }}>
             Security Engineer
           </div>
         </div>
-        <Link href="/login" style={{ textDecoration:'none' }}>
-          <span className="mono" style={{ fontSize:10, color:'var(--color-text-dim)', letterSpacing:'0.08em', cursor:'pointer' }}>
-            ⎋
-          </span>
+        <Link href="/login" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', padding: 4, color: 'var(--color-text-dim)' }}>
+          <LogOut size={14} strokeWidth={1.75} />
         </Link>
       </div>
     </aside>
+  )
+}
+
+// ── Small helpers ─────────────────────────────────────────────────────────────
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mono" style={{ fontSize: 10, letterSpacing: '0.12em', color: 'var(--color-text-dim)', textTransform: 'uppercase', padding: '4px 8px 6px' }}>
+      {children}
+    </div>
+  )
+}
+
+function NavItem({ children, active, accentColor }: { children: React.ReactNode; active: boolean; accentColor: string }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 8,
+      padding: '7px 8px',
+      borderRadius: 4,
+      background: active ? 'var(--color-bg-elevated)' : 'transparent',
+      border: active ? `1px solid var(--color-border)` : '1px solid transparent',
+      transition: 'background 0.12s',
+      cursor: 'pointer',
+    }}>
+      {children}
+    </div>
   )
 }

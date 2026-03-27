@@ -111,34 +111,32 @@ export default function ReportsPage() {
     <div style={{ padding: '24px 28px', overflowY: 'auto', height: '100%' }}>
       {/* Header */}
       <div style={{ marginBottom: 20 }}>
-        <div className="display" style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+        <h1 className="display" style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text-primary)', margin: 0 }}>
           Reports & Analysis
-        </div>
-        <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-dim)', letterSpacing: '0.08em', marginTop: 2 }}>
-          Generate Reports &nbsp;·&nbsp; Scan Comparison &nbsp;·&nbsp; Trend Analysis
-        </div>
+        </h1>
+        <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: '4px 0 0' }}>
+          Generate reports · Scan comparison · Trend analysis
+        </p>
       </div>
 
       {/* Tab Navigation */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '1px solid var(--color-border)' }}>
         {([
-          { id: 'generate' as ReportTab, label: 'GENERATE REPORT' },
-          { id: 'history' as ReportTab, label: 'REPORT HISTORY' },
-          { id: 'comparison' as ReportTab, label: 'SCAN COMPARISON' },
+          { id: 'generate' as ReportTab, label: 'Generate Report' },
+          { id: 'history' as ReportTab, label: 'Report History' },
+          { id: 'comparison' as ReportTab, label: 'Scan Comparison' },
         ]).map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className="mono"
             style={{
               background: 'transparent',
               border: 'none',
               borderBottom: activeTab === tab.id ? '2px solid var(--color-dast)' : '2px solid transparent',
-              color: activeTab === tab.id ? 'var(--color-dast)' : 'var(--color-text-dim)',
+              color: activeTab === tab.id ? 'var(--color-dast)' : 'var(--color-text-secondary)',
               padding: '8px 18px',
-              fontSize: 10,
-              fontWeight: 600,
-              letterSpacing: '0.1em',
+              fontSize: 13,
+              fontWeight: activeTab === tab.id ? 600 : 400,
               cursor: 'pointer',
               transition: 'all 0.12s',
             }}

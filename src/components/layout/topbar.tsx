@@ -3,93 +3,70 @@
 import { useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { useTheme } from '@/components/layout/theme-provider'
+import { Sun, Moon, ChevronDown } from 'lucide-react'
 
-const PAGE_META: Record<string, { title: string; product: string; color: string; breadcrumb: string }> = {
-  '/dashboard':           { title:'OVERVIEW',      product:'HemisX Console',  color:'var(--color-yellow)',   breadcrumb:'/ overview'      },
-  '/dashboard/scanner':   { title:'CLOUD SCANNER', product:'Cloud Security',  color:'var(--color-scanner)',  breadcrumb:'/ scanner'        },
-  '/dashboard/hemis':     { title:'HEMIS',         product:'AI Red Team',     color:'var(--color-hemis)',    breadcrumb:'/ hemis'          },
-  '/dashboard/hemis/sast': { title:'SAST',          product:'Static Analysis', color:'var(--color-hemis)',    breadcrumb:'/ hemis / sast'    },
-  '/dashboard/hemis/dast': { title:'DAST',          product:'Web App Security', color:'var(--color-dast)',     breadcrumb:'/ hemis / dast'    },
-  '/dashboard/hemis/wbrt': { title:'WHITE BOX RT',  product:'White Box Red Teaming', color:'var(--color-wbrt)',  breadcrumb:'/ hemis / wbrt'    },
-  '/dashboard/hemis/bbrt': { title:'BLACK BOX RT',  product:'Black Box Red Teaming', color:'var(--color-bbrt)',  breadcrumb:'/ hemis / bbrt'    },
-  '/dashboard/blueteam':  { title:'BLUE TEAM',     product:'Threat Response', color:'var(--color-blueteam)', breadcrumb:'/ blue-team'      },
+const PAGE_META: Record<string, { title: string; product: string; color: string; crumbs: string[] }> = {
+  '/dashboard':            { title: 'Overview',        product: 'HemisX Console',         color: 'var(--color-yellow)',   crumbs: ['Dashboard'] },
+  '/dashboard/scanner':    { title: 'Cloud Scanner',   product: 'Cloud Security',          color: 'var(--color-scanner)', crumbs: ['Dashboard', 'Cloud Scanner'] },
+  '/dashboard/hemis':      { title: 'HEMIS',           product: 'AI Red Team',             color: 'var(--color-hemis)',   crumbs: ['Dashboard', 'HEMIS'] },
+  '/dashboard/hemis/sast': { title: 'SAST',            product: 'Static Analysis',         color: 'var(--color-sast)',    crumbs: ['Dashboard', 'HEMIS', 'SAST'] },
+  '/dashboard/hemis/dast': { title: 'DAST',            product: 'Web App Security',        color: 'var(--color-dast)',    crumbs: ['Dashboard', 'HEMIS', 'DAST'] },
+  '/dashboard/hemis/wbrt': { title: 'White Box RT',    product: 'White Box Red Teaming',   color: 'var(--color-wbrt)',    crumbs: ['Dashboard', 'HEMIS', 'White Box RT'] },
+  '/dashboard/hemis/bbrt': { title: 'Black Box RT',    product: 'Black Box Red Teaming',   color: 'var(--color-bbrt)',    crumbs: ['Dashboard', 'HEMIS', 'Black Box RT'] },
+  '/dashboard/blueteam':   { title: 'Blue Team',       product: 'Threat Response',         color: 'var(--color-blueteam)', crumbs: ['Dashboard', 'Blue Team'] },
+  '/dashboard/reports':    { title: 'Reports',         product: 'HemisX Console',          color: 'var(--color-yellow)',  crumbs: ['Dashboard', 'Reports'] },
+  '/dashboard/settings':   { title: 'Settings',        product: 'HemisX Console',          color: 'var(--color-yellow)',  crumbs: ['Dashboard', 'Settings'] },
 }
-
-const PRODUCT_TOOLS = {
-  hemis: [
-    { href:'/dashboard/hemis/sast', label:'SAST', icon:'⬡' },
-    { href:'/dashboard/hemis/dast', label:'DAST', icon:'◇' },
-    { href:'/dashboard/hemis/payloads', label:'WHITE BOX RED TEAMING', icon:'◉' },
-    { href:'/dashboard/hemis/findings', label:'BLACK BOX RED TEAMING', icon:'◌' },
-    { href:'/dashboard/hemis/engagements', label:'FINDINGS ENGINE', icon:'▦' },
-    { href:'/dashboard/hemis/reports', label:'REPORT GENERATOR', icon:'▤' },
-  ],
-  scanner: [
-    { href:'/dashboard/scanner', label:'CLOUD SCAN', icon:'◈' },
-    { href:'/dashboard/scanner', label:'COMPLIANCE', icon:'▤' },
-    { href:'/dashboard/scanner', label:'INVENTORY', icon:'◌' },
-  ],
-  blueteam: [
-    { href:'/dashboard/blueteam', label:'ALERTS', icon:'◎' },
-    { href:'/dashboard/blueteam', label:'DETECTION RULES', icon:'▦' },
-    { href:'/dashboard/blueteam', label:'PLAYBOOKS', icon:'◌' },
-  ],
-}
-
-const PRODUCTS = [
-  { id: 'scanner', label: 'CLOUD SCANNER', color: 'var(--color-scanner)' },
-  { id: 'hemis', label: 'HEMIS', color: 'var(--color-hemis)' },
-  { id: 'blueteam', label: 'BLUE TEAM', color: 'var(--color-blueteam)' },
-]
 
 export default function Topbar() {
   const path = usePathname()
   const { theme, toggle } = useTheme()
   const meta = PAGE_META[path] ?? PAGE_META['/dashboard']
-  const [showToolsDropdown, setShowToolsDropdown] = useState(false)
-
-  // Determine active product (SAST and DAST are sub-products of HEMIS)
-  const effectivePath = (path.startsWith('/dashboard/hemis/sast') || path.startsWith('/dashboard/hemis/dast') || path.startsWith('/dashboard/hemis/wbrt') || path.startsWith('/dashboard/hemis/bbrt')) ? '/dashboard/hemis' : path
-  const activeProduct = PRODUCTS.find(p => effectivePath.startsWith(`/dashboard/${p.id}`))
-  const tools = activeProduct ? PRODUCT_TOOLS[activeProduct.id as keyof typeof PRODUCT_TOOLS] : []
 
   return (
     <header style={{
-      height: 60,
+      height: 56,
       background: 'var(--color-bg-surface)',
       borderBottom: '1px solid var(--color-border)',
       display: 'flex',
       alignItems: 'center',
-      padding: '0 26px',
-      gap: 18,
+      padding: '0 24px',
+      gap: 16,
       flexShrink: 0,
       position: 'sticky',
       top: 0,
       zIndex: 20,
     }}>
-      {/* Page identity */}
-      <div style={{ flex:1, display:'flex', alignItems:'center', gap:10 }}>
-        <span className="mono" style={{ fontSize:12, color:'var(--color-text-secondary)', letterSpacing:'0.08em' }}>
-          console.hemisx.com
-        </span>
-        <span style={{ color:'var(--color-border-bright)', fontSize:12 }}>›</span>
-        <span className="mono" style={{ fontSize:11, color:'var(--color-text-secondary)', letterSpacing:'0.08em' }}>
-          {meta.breadcrumb}
-        </span>
+
+      {/* Breadcrumbs */}
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+        {meta.crumbs.map((crumb, i) => (
+          <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {i > 0 && (
+              <span style={{ color: 'var(--color-border-bright)', fontSize: 13, lineHeight: 1 }}>/</span>
+            )}
+            <span style={{
+              fontSize: 13,
+              color: i === meta.crumbs.length - 1 ? 'var(--color-text-primary)' : 'var(--color-text-dim)',
+              fontWeight: i === meta.crumbs.length - 1 ? 500 : 400,
+            }}>
+              {crumb}
+            </span>
+          </span>
+        ))}
       </div>
 
-      {/* Center title */}
-      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-        <span className="mono" style={{
-          fontSize:12, fontWeight:600, letterSpacing:'0.14em',
-          textTransform:'uppercase', color: meta.color,
-        }}>
-          {meta.title}
+      {/* Center: product label */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ width: 6, height: 6, borderRadius: '50%', background: meta.color, boxShadow: `0 0 6px ${meta.color}` }} />
+        <span className="mono" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: meta.color }}>
+          {meta.product}
         </span>
       </div>
 
       {/* Right cluster */}
-      <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'flex-end', gap:16, position:'relative' }}>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
+
         {/* Theme toggle */}
         <button
           onClick={toggle}
@@ -98,10 +75,10 @@ export default function Topbar() {
             background: 'var(--color-bg-elevated)',
             border: '1px solid var(--color-border)',
             color: 'var(--color-text-secondary)',
-            width: 30, height: 30,
+            width: 32, height: 32,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer',
-            fontSize: 14,
+            borderRadius: 4,
             transition: 'all 0.15s',
             flexShrink: 0,
           }}
@@ -114,25 +91,38 @@ export default function Topbar() {
             e.currentTarget.style.color = 'var(--color-text-secondary)'
           }}
         >
-          {theme === 'dark' ? '☀' : '☾'}
+          {theme === 'dark'
+            ? <Sun size={14} strokeWidth={1.75} />
+            : <Moon size={14} strokeWidth={1.75} />
+          }
         </button>
 
-        {/* Divider */}
-        <div style={{ width:1, height:16, background:'var(--color-border)' }} />
+        {/* Separator */}
+        <div style={{ width: 1, height: 20, background: 'var(--color-border)' }} />
 
         {/* Org */}
-        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+        <button style={{
+          display: 'flex', alignItems: 'center', gap: 7,
+          background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px',
+          borderRadius: 4,
+          transition: 'background 0.12s',
+        }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-bg-elevated)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'none' }}
+        >
           <div style={{
-            width:24, height:24, borderRadius:'50%',
-            background:'var(--color-yellow-dim)',
-            border:'1px solid var(--color-yellow)',
-            display:'flex', alignItems:'center', justifyContent:'center',
+            width: 24, height: 24, borderRadius: '50%',
+            background: 'var(--color-yellow-dim)',
+            border: '1px solid var(--color-yellow)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 10, fontWeight: 700, color: 'var(--color-yellow)',
+            flexShrink: 0,
           }}>
-            <span style={{ fontSize:10, color:'var(--color-yellow)', fontWeight:700 }}>H</span>
+            H
           </div>
-          <span style={{ fontSize:13, color:'var(--color-text-secondary)' }}>Acme Corp</span>
-          <span className="mono" style={{ fontSize:11, color:'var(--color-text-secondary)' }}>▾</span>
-        </div>
+          <span style={{ fontSize: 13, color: 'var(--color-text-secondary)', fontWeight: 400 }}>Acme Corp</span>
+          <ChevronDown size={12} style={{ color: 'var(--color-text-dim)' }} />
+        </button>
       </div>
     </header>
   )
