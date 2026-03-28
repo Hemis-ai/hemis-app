@@ -6,7 +6,7 @@ import { useState } from 'react'
 import {
   Cloud, Shield, Code2, Globe, Eye, Scan, ShieldCheck,
   LayoutDashboard, FileText, Settings, ChevronRight,
-  Zap, LogOut,
+  Zap, LogOut, Monitor, Workflow, Layers,
 } from 'lucide-react'
 
 // ── Feature flags ─────────────────────────────────────────────────────────────
@@ -17,6 +17,9 @@ const FF = {
   bbrt:     process.env.NEXT_PUBLIC_FEATURE_BBRT     !== 'false',
   blueteam: process.env.NEXT_PUBLIC_FEATURE_BLUETEAM !== 'false',
   scanner:  process.env.NEXT_PUBLIC_FEATURE_SCANNER  !== 'false',
+  xdr:      process.env.NEXT_PUBLIC_FEATURE_XDR      !== 'false',
+  soar:     process.env.NEXT_PUBLIC_FEATURE_SOAR     !== 'false',
+  dect:     process.env.NEXT_PUBLIC_FEATURE_DECT     !== 'false',
 }
 
 const PRODUCTS = [
@@ -47,7 +50,11 @@ const PRODUCTS = [
     href: '/dashboard/blueteam',
     color: 'var(--color-blueteam)',
     Icon: ShieldCheck,
-    children: undefined as undefined,
+    children: [
+      ...(FF.xdr  ? [{ id: 'xdr',  label: 'XDR',  href: '/dashboard/blueteam/xdr',  Icon: Monitor,  color: 'var(--color-xdr)'  }] : []),
+      ...(FF.soar ? [{ id: 'soar', label: 'SOAR', href: '/dashboard/blueteam/soar', Icon: Workflow, color: 'var(--color-soar)' }] : []),
+      ...(FF.dect ? [{ id: 'dect', label: 'DECT', href: '/dashboard/blueteam/dect', Icon: Layers,   color: 'var(--color-dect)' }] : []),
+    ],
   }] : []),
 ]
 
@@ -61,6 +68,9 @@ export default function Sidebar() {
   const path = usePathname()
   const [hemisExpanded, setHemisExpanded] = useState(
     path.startsWith('/dashboard/hemis')
+  )
+  const [blueteamExpanded, setBlueteamExpanded] = useState(
+    path.startsWith('/dashboard/blueteam')
   )
 
   return (
@@ -115,7 +125,12 @@ export default function Sidebar() {
                 <Link
                   href={p.href}
                   style={{ textDecoration: 'none', flex: 1 }}
-                  onClick={() => { if (hasChildren) setHemisExpanded(true) }}
+                  onClick={() => {
+                    if (hasChildren) {
+                      if (p.id === 'hemis') setHemisExpanded(true)
+                      if (p.id === 'blueteam') setBlueteamExpanded(true)
+                    }
+                  }}
                 >
                   <NavItem active={isActive} accentColor={p.color}>
                     <p.Icon size={15} strokeWidth={1.75} style={{ flexShrink: 0, color: isActive ? p.color : 'var(--color-text-dim)' }} />
@@ -129,16 +144,22 @@ export default function Sidebar() {
                 </Link>
                 {hasChildren && (
                   <button
-                    onClick={() => setHemisExpanded(!hemisExpanded)}
+                    onClick={() => {
+                      if (p.id === 'hemis') setHemisExpanded(!hemisExpanded)
+                      if (p.id === 'blueteam') setBlueteamExpanded(!blueteamExpanded)
+                    }}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px 6px', display: 'flex', alignItems: 'center', color: 'var(--color-text-dim)' }}
                   >
-                    <ChevronRight size={13} style={{ transition: 'transform 0.15s', transform: hemisExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }} />
+                    <ChevronRight size={13} style={{
+                      transition: 'transform 0.15s',
+                      transform: (p.id === 'hemis' ? hemisExpanded : blueteamExpanded) ? 'rotate(90deg)' : 'rotate(0deg)',
+                    }} />
                   </button>
                 )}
               </div>
 
               {/* Sub-items */}
-              {hasChildren && hemisExpanded && (
+              {hasChildren && (p.id === 'hemis' ? hemisExpanded : blueteamExpanded) && (
                 <div style={{ paddingLeft: 12, marginTop: 1, marginBottom: 2 }}>
                   {p.children!.map(child => {
                     const childActive = path.startsWith(child.href)

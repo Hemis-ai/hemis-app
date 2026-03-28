@@ -40,6 +40,12 @@
   --color-wbrt-dim:       #002e24;
   --color-bbrt:           #ff6b9d;
   --color-bbrt-dim:       #380a1e;
+  --color-xdr:            #00e5ff;
+  --color-xdr-dim:        #002e38;
+  --color-soar:           #ffab40;
+  --color-soar-dim:       #2e1a00;
+  --color-dect:           #e040fb;
+  --color-dect-dim:       #2a0038;
   --color-critical:       #ef5a5a;
   --color-high:           #ec8450;
   --color-medium:         #f2d156;
@@ -82,6 +88,12 @@
   --color-wbrt-dim:       #002e24;
   --color-bbrt:           #ff6b9d;
   --color-bbrt-dim:       #380a1e;
+  --color-xdr:            #00e5ff;
+  --color-xdr-dim:        #002e38;
+  --color-soar:           #ffab40;
+  --color-soar-dim:       #2e1a00;
+  --color-dect:           #e040fb;
+  --color-dect-dim:       #2a0038;
   --color-critical:       #ef5a5a;
   --color-high:           #ec8450;
   --color-medium:         #f2d156;
@@ -286,6 +298,12 @@ body {
   --color-wbrt-dim:       #d0f5ec;
   --color-bbrt:           #c0205a;
   --color-bbrt-dim:       #ffe0ec;
+  --color-xdr:            #0090a8;
+  --color-xdr-dim:        #d0f4ff;
+  --color-soar:           #b86000;
+  --color-soar-dim:       #fff3d6;
+  --color-dect:           #9000b8;
+  --color-dect-dim:       #f5d0ff;
 }
 
 /* Grid dots flip to dark on light bg */
