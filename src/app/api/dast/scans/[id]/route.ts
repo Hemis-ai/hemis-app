@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, isDatabaseReachable } from '@/lib/db'
-import { getProgress } from '@/lib/dast/scan-orchestrator'
+import { getProgress, getProgressLog } from '@/lib/dast/scan-orchestrator'
 import { isDastEngineRunning, proxyToEngine } from '@/lib/dast/engine-proxy'
 import { verifyAccessToken, ACCESS_COOKIE } from '@/lib/auth/jwt'
 import { directScanStore } from '../route'
@@ -47,7 +47,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (scan.orgId !== orgId) return NextResponse.json({ error: 'Scan not found' }, { status: 404 })
 
     const progress = getProgress(id)
-    return NextResponse.json({ scan, progress: progress ?? null })
+    const logSince = parseInt(_req.nextUrl.searchParams.get('logSince') || '0', 10)
+    const progressLog = getProgressLog(id, logSince)
+    return NextResponse.json({ scan, progress: progress ?? null, progressLog })
   } catch (error) {
     console.error('GET /api/dast/scans/:id error:', error)
     return NextResponse.json({ error: 'Failed to fetch scan' }, { status: 500 })

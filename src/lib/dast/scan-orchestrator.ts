@@ -16,11 +16,29 @@ import { getOwaspMappingOrDefault } from './engine/scoring/owasp-mapper'
 import { enrichScanFindings } from './ai/enrichment-service'
 import { runBuiltinScan, type BuiltinFinding } from './builtin-scanner'
 
-// In-memory progress store for SSE polling
-const progressStore = new Map<string, ScanProgressEvent>()
+// In-memory progress store for SSE polling — includes a scrolling activity log
+export interface ProgressLogEntry {
+  timestamp: string
+  phase: string
+  message: string
+}
+
+interface ProgressState {
+  current: ScanProgressEvent
+  log: ProgressLogEntry[]
+}
+
+const MAX_LOG_ENTRIES = 200
+const progressStore = new Map<string, ProgressState>()
 
 export function getProgress(scanId: string): ScanProgressEvent | undefined {
-  return progressStore.get(scanId)
+  return progressStore.get(scanId)?.current
+}
+
+export function getProgressLog(scanId: string, since = 0): ProgressLogEntry[] {
+  const state = progressStore.get(scanId)
+  if (!state) return []
+  return state.log.slice(since)
 }
 
 export function clearProgress(scanId: string): void {
@@ -33,7 +51,18 @@ function emitProgress(scanId: string, status: DastScanStatus, progress: number, 
     endpointsDiscovered: 0, endpointsTested: 0, payloadsSent: 0, findingsCount: 0,
     timestamp: new Date().toISOString(), message,
   }
-  progressStore.set(scanId, event)
+  const state = progressStore.get(scanId)
+  if (state) {
+    state.current = event
+    state.log.push({ timestamp: event.timestamp, phase: currentPhase, message })
+    // Cap log size
+    if (state.log.length > MAX_LOG_ENTRIES) state.log = state.log.slice(-MAX_LOG_ENTRIES)
+  } else {
+    progressStore.set(scanId, {
+      current: event,
+      log: [{ timestamp: event.timestamp, phase: currentPhase, message }],
+    })
+  }
 }
 
 /**
@@ -56,17 +85,18 @@ async function isZapAvailable(): Promise<boolean> {
  * This runs in the background (fire-and-forget from the route handler).
  * Uses ZAP when available; falls back to built-in HTTP scanner otherwise.
  */
-export async function runDastScan(scanId: string): Promise<void> {
+export async function runDastScan(scanId: string, options?: { enableAiEnrichment?: boolean }): Promise<void> {
   const scan = await prisma.dastScan.findUnique({ where: { id: scanId } })
   if (!scan) return
 
   const { targetUrl, scope, excludedPaths, authConfig, scanProfile } = scan
+  const enableAi = options?.enableAiEnrichment ?? false
 
   // Check if ZAP is available; use built-in scanner if not
   const zapAvailable = await isZapAvailable()
   if (!zapAvailable) {
     console.log(`ZAP not available — using built-in HTTP scanner for scan ${scanId}`)
-    return runBuiltinDastScan(scanId, targetUrl)
+    return runBuiltinDastScan(scanId, targetUrl, scanProfile as string, enableAi)
   }
 
   const client = new ZapClient()
@@ -201,16 +231,18 @@ export async function runDastScan(scanId: string): Promise<void> {
     } })
     emitProgress(scanId, 'RUNNING', 90, 'extracting', `Extracted ${totalFindings} findings (${severityCounts.critical} critical, ${severityCounts.high} high)`)
 
-    // Phase 5-6: AI Enrichment (90-99%)
-    await prisma.dastScan.update({ where: { id: scanId }, data: { currentPhase: 'analyzing' } })
-    emitProgress(scanId, 'RUNNING', 90, 'analyzing', 'Starting AI enrichment...')
-    await enrichScanFindings(scanId, {
-      onProgress: (percent, message) => {
-        const overallProgress = Math.round(90 + (percent / 100) * 9)
-        const phase = percent <= 80 ? 'analyzing' : 'summarizing'
-        emitProgress(scanId, 'RUNNING', overallProgress, phase, message)
-      },
-    })
+    // Phase 5-6: AI Enrichment (90-99%) — only if enabled
+    if (enableAi) {
+      await prisma.dastScan.update({ where: { id: scanId }, data: { currentPhase: 'analyzing' } })
+      emitProgress(scanId, 'RUNNING', 90, 'analyzing', 'Starting AI enrichment...')
+      await enrichScanFindings(scanId, {
+        onProgress: (percent, message) => {
+          const overallProgress = Math.round(90 + (percent / 100) * 9)
+          const phase = percent <= 80 ? 'analyzing' : 'summarizing'
+          emitProgress(scanId, 'RUNNING', overallProgress, phase, message)
+        },
+      })
+    }
 
     // Phase 7: Complete (100%)
     const riskScore = Math.min(100, severityCounts.critical * 25 + severityCounts.high * 10 + severityCounts.medium * 3 + severityCounts.low * 1)
@@ -348,7 +380,7 @@ async function runAuthSessionTests(
  * Run a real DAST scan using the built-in HTTP scanner.
  * This makes actual HTTP requests to the target — no ZAP or Python engine needed.
  */
-async function runBuiltinDastScan(scanId: string, targetUrl: string): Promise<void> {
+async function runBuiltinDastScan(scanId: string, targetUrl: string, scanProfile?: string, enableAi?: boolean): Promise<void> {
   try {
     await prisma.dastScan.update({
       where: { id: scanId },
@@ -356,15 +388,18 @@ async function runBuiltinDastScan(scanId: string, targetUrl: string): Promise<vo
     })
     emitProgress(scanId, 'RUNNING', 0, 'initializing', 'Starting built-in HTTP scanner...')
 
-    const result = await runBuiltinScan(targetUrl, (percent, phase, message) => {
-      emitProgress(scanId, 'RUNNING', percent, phase, message)
-      // Update DB progress periodically
-      if (percent % 10 === 0) {
-        prisma.dastScan.update({
-          where: { id: scanId },
-          data: { progress: percent, currentPhase: phase },
-        }).catch(() => {})
-      }
+    const result = await runBuiltinScan(targetUrl, {
+      scanProfile: (scanProfile as 'quick' | 'full' | 'api_only' | 'deep') ?? 'full',
+      onProgress: (percent, phase, message) => {
+        emitProgress(scanId, 'RUNNING', percent, phase, message)
+        // Update DB progress periodically
+        if (percent % 10 === 0) {
+          prisma.dastScan.update({
+            where: { id: scanId },
+            data: { progress: percent, currentPhase: phase },
+          }).catch(() => {})
+        }
+      },
     })
 
     // Persist findings to database with full enrichment data
@@ -417,24 +452,45 @@ async function runBuiltinDastScan(scanId: string, targetUrl: string): Promise<vo
     // Generate executive summary
     const summary = `## Scan Overview\nBuilt-in DAST scan of **${targetUrl}** identified **${totalFindings} issues** across ${sev.critical} critical, ${sev.high} high, ${sev.medium} medium, ${sev.low} low, and ${sev.info} informational severity levels.\n\n## Key Findings\n${result.findings.filter(f => f.severity === 'CRITICAL' || f.severity === 'HIGH').map(f => `- **${f.title}** (${f.severity}) — ${f.affectedUrl}`).join('\n') || '- No critical or high severity issues found'}\n\n## Technology Stack\n${result.techStack.length > 0 ? result.techStack.join(', ') : 'Not detected'}`
 
+    // Update severity counts and basic summary first
     await prisma.dastScan.update({
       where: { id: scanId },
       data: {
-        status: 'COMPLETED',
-        progress: 100,
-        currentPhase: 'complete',
-        completedAt: new Date(),
-        riskScore,
-        criticalCount: sev.critical,
-        highCount: sev.high,
-        mediumCount: sev.medium,
-        lowCount: sev.low,
-        infoCount: sev.info,
+        criticalCount: sev.critical, highCount: sev.high, mediumCount: sev.medium,
+        lowCount: sev.low, infoCount: sev.info, riskScore,
         endpointsDiscovered: result.endpointsDiscovered,
         endpointsTested: result.endpointsTested,
         payloadsSent: result.payloadsSent,
         techStackDetected: result.techStack,
         executiveSummary: summary,
+        progress: enableAi ? 85 : 100,
+      },
+    })
+    emitProgress(scanId, 'RUNNING', enableAi ? 85 : 98, enableAi ? 'extracting' : 'complete', `Extracted ${totalFindings} findings`)
+
+    // AI Enrichment (if enabled) — attack chains, compliance mapping, remediation code
+    if (enableAi && totalFindings > 0) {
+      emitProgress(scanId, 'RUNNING', 86, 'analyzing', 'Starting AI enrichment — attack chains, compliance...')
+      await prisma.dastScan.update({ where: { id: scanId }, data: { currentPhase: 'analyzing' } })
+      try {
+        await enrichScanFindings(scanId, {
+          onProgress: (percent, message) => {
+            const overallProgress = Math.round(86 + (percent / 100) * 13)
+            const phase = percent <= 80 ? 'analyzing' : 'summarizing'
+            emitProgress(scanId, 'RUNNING', overallProgress, phase, message)
+          },
+        })
+      } catch (aiError) {
+        console.warn('AI enrichment failed (non-fatal):', aiError)
+        emitProgress(scanId, 'RUNNING', 98, 'summarizing', 'AI enrichment skipped — completing scan')
+      }
+    }
+
+    // Mark complete
+    await prisma.dastScan.update({
+      where: { id: scanId },
+      data: {
+        status: 'COMPLETED', progress: 100, currentPhase: 'complete', completedAt: new Date(),
       },
     })
 

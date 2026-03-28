@@ -135,9 +135,15 @@ export default function DastPage() {
   const [compResult, setCompResult] = useState<any>(null)
   const [compLoading, setCompLoading] = useState(false)
 
+  // ── AI enrichment toggle ──
+  const [enableAi, setEnableAi] = useState(false)
+
   // ── Scan progress state ──
   const [isScanning, setIsScanning] = useState(false)
   const [scanProgress, setScanProgress] = useState<DastScanProgress | null>(null)
+  const [scanLog, setScanLog] = useState<Array<{ timestamp: string; phase: string; message: string }>>([])
+  const scanLogRef = useRef<HTMLDivElement | null>(null)
+  const logIndexRef = useRef(0)
   const progressRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -299,22 +305,34 @@ export default function DastPage() {
       const res = await fetch('/api/dast/scans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, targetUrl, scanProfile, authConfig, scope: scopeConfig }),
+        body: JSON.stringify({ name, targetUrl, scanProfile, authConfig, scope: scopeConfig, enableAiEnrichment: enableAi }),
       })
       if (res.ok) {
         const data = await res.json()
         const newScan = data.scan
         setIsScanning(true)
         setScanStartTime(Date.now())
+        setScanLog([])
+        logIndexRef.current = 0
         // Poll for progress
         pollRef.current = setInterval(async () => {
           try {
-            const pollRes = await fetch(`/api/dast/scans/${newScan.id}`)
+            const pollRes = await fetch(`/api/dast/scans/${newScan.id}?logSince=${logIndexRef.current}`)
             if (pollRes.ok) {
               const pollData = await pollRes.json()
               const scan = pollData.scan
               const progress = pollData.progress
               if (progress) setScanProgress(progress)
+              // Append new log entries
+              if (pollData.progressLog && Array.isArray(pollData.progressLog) && pollData.progressLog.length > 0) {
+                logIndexRef.current += pollData.progressLog.length
+                setScanLog(prev => {
+                  const combined = [...prev, ...pollData.progressLog]
+                  return combined.length > 200 ? combined.slice(-200) : combined
+                })
+                // Auto-scroll log panel
+                setTimeout(() => scanLogRef.current?.scrollTo({ top: scanLogRef.current.scrollHeight, behavior: 'smooth' }), 50)
+              }
               // Update progress from scan object if no separate progress event
               if (!progress && scan.progress != null && scan.status === 'RUNNING') {
                 setScanProgress({
@@ -356,7 +374,7 @@ export default function DastPage() {
                     })
                   }
                 }
-                setTimeout(() => { setIsScanning(false); setScanProgress(null); setScanStartTime(null); fetchScans() }, 2000)
+                setTimeout(() => { setIsScanning(false); setScanProgress(null); setScanStartTime(null); setScanLog([]); logIndexRef.current = 0; fetchScans() }, 2000)
               }
             }
           } catch { /* ignore poll errors */ }
@@ -425,17 +443,81 @@ export default function DastPage() {
       return 'CSV report downloaded.'
     }
 
-    // PDF (HTML report)
-    const findingsHtml = scanFindings.map(f => `
+    // PDF (HTML report) — rich format matching history tab
+    const sevColors: Record<string, string> = { CRITICAL: '#dc2626', HIGH: '#ea580c', MEDIUM: '#ca8a04', LOW: '#2563eb', INFO: '#6b7280' }
+    const sevWeight: Record<string, number> = { CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1 }
+
+    // Compute OWASP heatmap data
+    const owaspMap = new Map<string, { count: number; sev: string; score: number }>()
+    for (const f of scanFindings) {
+      const cat = f.owaspCategory || 'Unknown'
+      const e = owaspMap.get(cat) ?? { count: 0, sev: 'INFO', score: 0 }
+      e.count++; e.score += sevWeight[f.severity] ?? 1
+      if ((sevWeight[f.severity] ?? 0) > (sevWeight[e.sev] ?? 0)) e.sev = f.severity
+      owaspMap.set(cat, e)
+    }
+
+    // Compute attack surface
+    const surfMap = new Map<string, { count: number; sev: string }>()
+    for (const f of scanFindings) {
+      const e = surfMap.get(f.affectedUrl) ?? { count: 0, sev: 'INFO' }
+      e.count++
+      if ((sevWeight[f.severity] ?? 0) > (sevWeight[e.sev] ?? 0)) e.sev = f.severity
+      surfMap.set(f.affectedUrl, e)
+    }
+    const topEndpoints = Array.from(surfMap.entries()).sort((a, b) => b[1].count - a[1].count).slice(0, 15)
+
+    // Parse AI data
+    let aiChains = null; let aiCompliance = null
+    try { if (scan.aiCorrelationData) aiChains = JSON.parse(scan.aiCorrelationData) } catch { /* skip */ }
+    try { if (scan.aiComplianceData) aiCompliance = JSON.parse(scan.aiComplianceData) } catch { /* skip */ }
+
+    const findingsHtml = scanFindings.map(f => {
+      let codeBlock = ''
+      if (f.remediationCode) {
+        try {
+          const rc = JSON.parse(f.remediationCode)
+          codeBlock = `<tr><td colspan="6" style="background:#f8f7ff;padding:12px"><div style="font-size:10px;color:#888;margin-bottom:4px">Vulnerable:</div><pre style="background:#fef2f2;padding:8px;font-size:10px;color:#dc2626;white-space:pre-wrap;border-radius:4px">${rc.before || rc.vulnerableCode || ''}</pre><div style="font-size:10px;color:#888;margin:6px 0 4px">Fix:</div><pre style="background:#f0fdf4;padding:8px;font-size:10px;color:#16a34a;white-space:pre-wrap;border-radius:4px">${rc.after || rc.remediatedCode || ''}</pre></td></tr>`
+        } catch { /* skip */ }
+      }
+      const compRefs = [
+        ...(f.pciDssRefs?.length ? [`PCI-DSS: ${f.pciDssRefs.join(', ')}`] : []),
+        ...(f.soc2Refs?.length ? [`SOC2: ${f.soc2Refs.join(', ')}`] : []),
+        ...(f.mitreAttackIds?.length ? [`MITRE: ${f.mitreAttackIds.join(', ')}`] : []),
+      ].join(' | ')
+      return `
       <tr>
         <td><span class="sev-${f.severity.toLowerCase()}">${f.severity}</span></td>
-        <td>${f.title}</td>
+        <td><strong>${f.title}</strong>${f.businessImpact ? `<div style="font-size:10px;color:#ca8a04;margin-top:4px">${f.businessImpact.substring(0, 200)}</div>` : ''}</td>
         <td>${f.owaspCategory}</td>
         <td>${f.cvssScore ?? '-'}</td>
         <td style="font-size:11px;word-break:break-all">${f.affectedUrl}</td>
-        <td style="font-size:11px">${f.remediation}</td>
-      </tr>
-    `).join('')
+        <td style="font-size:11px">${f.remediation}${compRefs ? `<div style="font-size:9px;color:#888;margin-top:4px">${compRefs}</div>` : ''}</td>
+      </tr>${codeBlock}`
+    }).join('')
+
+    // OWASP heatmap HTML
+    const owaspHtml = owaspMap.size > 0 ? `<h2>OWASP Top 10 Coverage</h2><table><thead><tr><th>Category</th><th>Severity</th><th>Count</th><th>Score</th></tr></thead><tbody>${
+      Array.from(owaspMap.entries()).sort((a, b) => b[1].score - a[1].score).map(([cat, v]) =>
+        `<tr><td>${cat}</td><td><span class="sev-${v.sev.toLowerCase()}">${v.sev}</span></td><td>${v.count}</td><td>${v.score}</td></tr>`
+      ).join('')
+    }</tbody></table>` : ''
+
+    // Attack surface HTML
+    const surfHtml = topEndpoints.length > 0 ? `<h2>Attack Surface — Most Affected Endpoints</h2><table><thead><tr><th>Endpoint</th><th>Highest Severity</th><th>Findings</th></tr></thead><tbody>${
+      topEndpoints.map(([url, v]) => {
+        let path = url; try { path = new URL(url).pathname } catch { /* keep */ }
+        return `<tr><td style="word-break:break-all">${path}</td><td><span class="sev-${v.sev.toLowerCase()}">${v.sev}</span></td><td>${v.count}</td></tr>`
+      }).join('')
+    }</tbody></table>` : ''
+
+    // Attack chains HTML
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chainsHtml = aiChains?.attackChains?.length ? `<h2>Attack Chains</h2>${aiChains.overallChainedRiskScore != null ? `<div class="meta"><div class="meta-box"><div class="val" style="color:${aiChains.overallChainedRiskScore >= 75 ? '#dc2626' : '#ca8a04'}">${aiChains.overallChainedRiskScore}</div><div class="lbl">Chained Risk Score</div></div></div>` : ''}${aiChains.attackChains.map((c: any) => `<div style="border-left:4px solid ${sevColors[c.severity] || '#6b7280'};padding:12px 16px;margin:12px 0;background:#f8f7ff"><strong>${c.name}</strong> <span class="sev-${(c.severity || '').toLowerCase()}">${c.severity}</span><p style="font-size:12px;color:#555;margin:6px 0">${c.description}</p>${c.exploitationSteps?.length ? `<div style="font-size:11px;color:#7c3aed;margin:6px 0">${c.exploitationSteps.map((s: string, i: number) => `${i + 1}. ${s}`).join('<br>')}</div>` : ''}${c.businessImpact ? `<div style="font-size:11px;color:#ca8a04;font-style:italic;margin-top:6px">${c.businessImpact}</div>` : ''}</div>`).join('')}` : ''
+
+    // Compliance HTML
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const compHtml = aiCompliance?.frameworks?.length ? `<h2>Compliance Overview</h2><div class="meta">${aiCompliance.complianceScore != null ? `<div class="meta-box"><div class="val">${aiCompliance.complianceScore}%</div><div class="lbl">Compliance Score</div></div>` : ''}${aiCompliance.auditReadiness ? `<div class="meta-box"><div class="val" style="font-size:16px">${aiCompliance.auditReadiness}</div><div class="lbl">Audit Readiness</div></div>` : ''}</div>${aiCompliance.frameworks.map((fw: any) => `<div style="background:#f8f7ff;border:1px solid #e5e0ff;padding:12px;margin:8px 0"><strong>${fw.name}</strong> — ${fw.controlsAffected}/${fw.totalControlsChecked} controls affected</div>`).join('')}${aiCompliance.keyGaps?.length ? `<div style="margin-top:12px"><strong>Key Gaps:</strong><ol style="margin:6px 0;padding-left:20px;font-size:12px;color:#ea580c">${aiCompliance.keyGaps.map((g: string) => `<li>${g}</li>`).join('')}</ol></div>` : ''}` : ''
 
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DAST Report - ${scan.name}</title>
     <style>
@@ -461,10 +543,19 @@ export default function DastPage() {
       <div class="meta-box"><div class="val">${scanFindings.length}</div><div class="lbl">Total Findings</div></div>
       <div class="meta-box"><div class="val">${scan.endpointsTested}</div><div class="lbl">Endpoints Tested</div></div>
     </div>
+    <div class="meta">
+      <div class="meta-box"><div class="val" style="color:#dc2626">${scan.criticalCount}</div><div class="lbl">Critical</div></div>
+      <div class="meta-box"><div class="val" style="color:#ea580c">${scan.highCount}</div><div class="lbl">High</div></div>
+      <div class="meta-box"><div class="val" style="color:#ca8a04">${scan.mediumCount}</div><div class="lbl">Medium</div></div>
+    </div>
     <table><tr><td><strong>Target:</strong> ${scan.targetUrl}</td><td><strong>Profile:</strong> ${scan.scanProfile}</td><td><strong>Date:</strong> ${scan.completedAt ? new Date(scan.completedAt).toLocaleDateString() : 'N/A'}</td></tr>
-    <tr><td><strong>Critical:</strong> ${scan.criticalCount}</td><td><strong>High:</strong> ${scan.highCount}</td><td><strong>Medium:</strong> ${scan.mediumCount} | <strong>Low:</strong> ${scan.lowCount} | <strong>Info:</strong> ${scan.infoCount}</td></tr></table>
+    <tr><td><strong>Tech Stack:</strong> ${scan.techStackDetected?.join(', ') || 'Not detected'}</td><td><strong>Payloads Sent:</strong> ${scan.payloadsSent ?? 0}</td><td><strong>Endpoints Discovered:</strong> ${scan.endpointsDiscovered ?? 0}</td></tr></table>
     ${scan.executiveSummary ? `<h2>Executive Summary</h2><div class="summary">${scan.executiveSummary}</div>` : ''}
-    <h2>Findings</h2>
+    ${owaspHtml}
+    ${surfHtml}
+    ${chainsHtml}
+    ${compHtml}
+    <h2>Detailed Findings (${scanFindings.length})</h2>
     <table><thead><tr><th>Severity</th><th>Title</th><th>OWASP</th><th>CVSS</th><th>URL</th><th>Remediation</th></tr></thead><tbody>${findingsHtml}</tbody></table>
     <p style="margin-top:40px;font-size:11px;color:#aaa;text-align:center">Generated by HemisX DAST Scanner on ${new Date().toLocaleString()}</p>
     </body></html>`
@@ -650,6 +741,37 @@ export default function DastPage() {
                   </div>
                 ))}
               </div>
+
+              {/* Live Activity Feed */}
+              {scanLog.length > 0 && (
+                <div style={{ marginTop: 14 }}>
+                  <div className="mono" style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.12em', color: 'var(--color-text-dim)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--color-dast)', display: 'inline-block', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                    LIVE ACTIVITY FEED
+                  </div>
+                  <div
+                    ref={scanLogRef}
+                    style={{
+                      maxHeight: 180, overflowY: 'auto', background: 'var(--color-bg-elevated)',
+                      border: '1px solid var(--color-border)', padding: '8px 10px',
+                      fontFamily: 'var(--font-mono)', fontSize: 10, lineHeight: 1.8,
+                    }}
+                  >
+                    {scanLog.map((entry, i) => {
+                      const time = new Date(entry.timestamp)
+                      const ts = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}:${time.getSeconds().toString().padStart(2, '0')}`
+                      const phaseColor = entry.phase === 'crawling' ? 'var(--color-medium)' : entry.phase === 'scanning' ? 'var(--color-high)' : entry.phase === 'analyzing' ? 'var(--color-dast)' : entry.phase === 'complete' ? 'var(--color-scanner)' : 'var(--color-text-dim)'
+                      return (
+                        <div key={i} style={{ display: 'flex', gap: 8, color: 'var(--color-text-secondary)' }}>
+                          <span style={{ color: 'var(--color-text-dim)', flexShrink: 0 }}>{ts}</span>
+                          <span style={{ color: phaseColor, flexShrink: 0, minWidth: 70, textTransform: 'uppercase', fontSize: 9, fontWeight: 600 }}>{entry.phase}</span>
+                          <span>{entry.message}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -794,6 +916,38 @@ export default function DastPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+
+              {/* AI Enrichment Toggle */}
+              <div
+                onClick={() => setEnableAi(!enableAi)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  background: enableAi ? 'var(--color-dast-dim)' : 'var(--color-bg-elevated)',
+                  border: `1px solid ${enableAi ? 'var(--color-dast)' : 'var(--color-border)'}`,
+                  padding: '12px 16px', marginBottom: 18, cursor: 'pointer',
+                  transition: 'all 0.12s',
+                }}
+              >
+                <div style={{
+                  width: 36, height: 20, borderRadius: 10, position: 'relative',
+                  background: enableAi ? 'var(--color-dast)' : 'var(--color-border)',
+                  transition: 'background 0.2s', flexShrink: 0,
+                }}>
+                  <div style={{
+                    width: 16, height: 16, borderRadius: 8, background: '#fff',
+                    position: 'absolute', top: 2,
+                    left: enableAi ? 18 : 2, transition: 'left 0.2s',
+                  }} />
+                </div>
+                <div>
+                  <div className="mono" style={{ fontSize: 11, fontWeight: 600, color: enableAi ? 'var(--color-dast)' : 'var(--color-text-primary)', letterSpacing: '0.08em' }}>
+                    AI ANALYSIS
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 2 }}>
+                    Attack chains, compliance mapping, AI-powered remediation code &nbsp;&middot;&nbsp; Adds ~2-5 min
+                  </div>
+                </div>
               </div>
 
               {/* Advanced Configuration Toggle */}

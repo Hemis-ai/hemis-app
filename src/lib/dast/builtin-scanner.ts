@@ -237,14 +237,35 @@ function enrichFinding(f: BuiltinFinding): BuiltinFinding {
 let _payloadCounter = 0
 function countPayload() { _payloadCounter++ }
 
+export interface BuiltinScanOptions {
+  onProgress?: (percent: number, phase: string, message: string) => void
+  scanProfile?: 'quick' | 'full' | 'api_only' | 'deep'
+}
+
+// Profile-aware settings
+const PROFILE_SETTINGS: Record<string, { maxPages: number; crawlConcurrency: number; crawlTimeout: number; skipChecks: string[] }> = {
+  quick: { maxPages: 20, crawlConcurrency: 8, crawlTimeout: 4000, skipChecks: ['prototype_pollution', 'verbose_errors', 'http_methods'] },
+  full: { maxPages: 50, crawlConcurrency: 5, crawlTimeout: 5000, skipChecks: [] },
+  api_only: { maxPages: 30, crawlConcurrency: 5, crawlTimeout: 5000, skipChecks: ['dom_xss', 'sri', 'mixed_content', 'clickjacking'] },
+  deep: { maxPages: 100, crawlConcurrency: 4, crawlTimeout: 6000, skipChecks: [] },
+}
+
 /**
  * Run a real DAST scan against the target URL.
  * This makes actual HTTP requests — no mocking.
  */
 export async function runBuiltinScan(
   targetUrl: string,
-  onProgress?: (percent: number, phase: string, message: string) => void,
+  optionsOrProgress?: BuiltinScanOptions | ((percent: number, phase: string, message: string) => void),
 ): Promise<ScanResult> {
+  // Support both old callback signature and new options object
+  const options: BuiltinScanOptions = typeof optionsOrProgress === 'function'
+    ? { onProgress: optionsOrProgress }
+    : optionsOrProgress ?? {}
+  const { onProgress, scanProfile = 'full' } = options
+  const settings = PROFILE_SETTINGS[scanProfile] ?? PROFILE_SETTINGS.full
+  const skipSet = new Set(settings.skipChecks)
+
   const findings: BuiltinFinding[] = []
   const techStack: string[] = []
   _payloadCounter = 0
@@ -257,9 +278,9 @@ export async function runBuiltinScan(
   }
   onProgress?.(5, 'initializing', `Target reachable (HTTP ${baseResponse.status})`)
 
-  // Phase 2: Crawl and discover pages (5-30%)
+  // Phase 2: Crawl and discover pages (5-30%) — concurrent crawling
   onProgress?.(6, 'crawling', 'Crawling target site...')
-  const crawled = await crawlSite(targetUrl, baseResponse, (percent, msg) => {
+  const crawled = await crawlSiteConcurrent(targetUrl, baseResponse, settings.maxPages, settings.crawlConcurrency, settings.crawlTimeout, (percent, msg) => {
     onProgress?.(5 + Math.round(percent * 0.25), 'crawling', msg)
   })
   onProgress?.(30, 'crawling', `Discovered ${crawled.length} pages`)
@@ -275,56 +296,79 @@ export async function runBuiltinScan(
     const percent = 35 + Math.round((i / totalPages) * 35)
     onProgress?.(percent, 'scanning', `Analyzing ${new URL(page.url).pathname} (${i + 1}/${totalPages})`)
 
-    // Run all checks on this page
+    // Run all sync checks on this page (skip checks based on profile)
     checkSecurityHeaders(page, findings)
     checkCORS(page, findings)
     checkCookieSecurity(page, findings)
     checkInformationDisclosure(page, findings)
-    checkClickjacking(page, findings)
+    if (!skipSet.has('clickjacking')) checkClickjacking(page, findings)
     checkCacheHeaders(page, findings)
     checkCSPDetails(page, findings)
-    checkSRI(page, findings)
-    checkMixedContent(page, findings)
-    checkDOMXSSHeuristic(page, findings)
+    if (!skipSet.has('sri')) checkSRI(page, findings)
+    if (!skipSet.has('mixed_content')) checkMixedContent(page, findings)
+    if (!skipSet.has('dom_xss')) checkDOMXSSHeuristic(page, findings)
     checkInfoDisclosureBody(page, findings)
   }
 
-  // Phase 5: Active CORS test (70-73%)
-  onProgress?.(70, 'scanning', 'Testing CORS with crafted Origin header...')
-  await checkCORSActive(targetUrl, findings)
+  // Phase 5-9: Run async checks in parallel for speed
+  onProgress?.(70, 'scanning', 'Running active security tests...')
+  const asyncChecks: Array<Promise<void>> = []
 
-  // Phase 6: TLS check + cert details (73-77%)
-  onProgress?.(73, 'scanning', 'Checking TLS/SSL configuration...')
-  await checkTLS(targetUrl, findings)
-  await checkTLSCertDetails(targetUrl, findings)
+  // CORS active test
+  asyncChecks.push(
+    checkCORSActive(targetUrl, findings).then(() => onProgress?.(72, 'scanning', 'CORS active test complete'))
+  )
 
-  // Phase 7: Backup file + VCS discovery (77-85%)
-  onProgress?.(77, 'scanning', 'Probing for backup and sensitive files...')
-  await checkBackupFiles(targetUrl, findings, (msg) => onProgress?.(80, 'scanning', msg))
+  // TLS checks
+  asyncChecks.push(
+    Promise.all([checkTLS(targetUrl, findings), checkTLSCertDetails(targetUrl, findings)])
+      .then(() => onProgress?.(75, 'scanning', 'TLS/SSL checks complete'))
+  )
 
-  // Phase 8: HSTS check (85-86%)
-  onProgress?.(85, 'scanning', 'Checking HSTS enforcement...')
+  // Backup file + VCS discovery
+  asyncChecks.push(
+    checkBackupFiles(targetUrl, findings, (msg) => onProgress?.(78, 'scanning', msg))
+      .then(() => onProgress?.(80, 'scanning', 'Sensitive file probing complete'))
+  )
+
+  // Admin/debug endpoint probing
+  asyncChecks.push(
+    checkAdminDebugEndpoints(targetUrl, findings, (msg) => onProgress?.(83, 'scanning', msg))
+      .then(() => onProgress?.(85, 'scanning', 'Admin endpoint probing complete'))
+  )
+
+  await Promise.allSettled(asyncChecks)
+
+  // Phase 10: HSTS check (sync, fast)
+  onProgress?.(86, 'scanning', 'Checking HSTS enforcement...')
   checkHSTS(crawled[0], findings)
 
-  // Phase 9: Admin/debug endpoint probing (86-90%)
-  onProgress?.(86, 'scanning', 'Probing for admin and debug endpoints...')
-  await checkAdminDebugEndpoints(targetUrl, findings, (msg) => onProgress?.(88, 'scanning', msg))
+  // Phase 11-13: Remaining async checks in parallel
+  const asyncChecks2: Array<Promise<void>> = []
 
-  // Phase 10: HTTP methods enumeration (90-92%)
-  onProgress?.(90, 'scanning', 'Enumerating HTTP methods...')
-  await checkHTTPMethods(crawled.slice(0, 5), findings)
+  if (!skipSet.has('http_methods')) {
+    asyncChecks2.push(
+      checkHTTPMethods(crawled.slice(0, 5), findings).then(() => onProgress?.(90, 'scanning', 'HTTP methods enumeration complete'))
+    )
+  }
 
-  // Phase 11: Open redirect test (92-94%)
-  onProgress?.(92, 'scanning', 'Testing for open redirects...')
-  await checkOpenRedirect(crawled, findings)
+  asyncChecks2.push(
+    checkOpenRedirect(crawled, findings).then(() => onProgress?.(93, 'scanning', 'Open redirect tests complete'))
+  )
 
-  // Phase 12: Verbose error detection (94-96%)
-  onProgress?.(94, 'scanning', 'Testing for verbose errors...')
-  await checkVerboseErrors(targetUrl, crawled, findings)
+  if (!skipSet.has('verbose_errors')) {
+    asyncChecks2.push(
+      checkVerboseErrors(targetUrl, crawled, findings).then(() => onProgress?.(95, 'scanning', 'Verbose error detection complete'))
+    )
+  }
 
-  // Phase 13: Prototype pollution (96-98%)
-  onProgress?.(96, 'scanning', 'Testing for prototype pollution...')
-  await checkPrototypePollution(targetUrl, findings)
+  if (!skipSet.has('prototype_pollution')) {
+    asyncChecks2.push(
+      checkPrototypePollution(targetUrl, findings).then(() => onProgress?.(97, 'scanning', 'Prototype pollution test complete'))
+    )
+  }
+
+  await Promise.allSettled(asyncChecks2)
 
   // Deduplicate findings (include affectedParameter to avoid dropping legitimate variants)
   const seen = new Set<string>()
@@ -393,38 +437,62 @@ function extractLinks(html: string, baseUrl: string): string[] {
   return links
 }
 
+/** @deprecated Use crawlSiteConcurrent instead */
 async function crawlSite(
   targetUrl: string,
   basePage: CrawledPage,
+  onProgress?: (percent: number, msg: string) => void,
+): Promise<CrawledPage[]> {
+  return crawlSiteConcurrent(targetUrl, basePage, 50, 5, 5000, onProgress)
+}
+
+/**
+ * Concurrent crawler — fetches multiple pages in parallel for speed.
+ */
+async function crawlSiteConcurrent(
+  targetUrl: string,
+  basePage: CrawledPage,
+  maxPages: number,
+  concurrency: number,
+  timeout: number,
   onProgress?: (percent: number, msg: string) => void,
 ): Promise<CrawledPage[]> {
   const crawled: CrawledPage[] = [basePage]
   const visited = new Set<string>([basePage.url])
   const queue = [...basePage.links]
   const origin = new URL(targetUrl).origin
-  const maxPages = 50 // Reasonable limit
 
-  let processed = 0
   while (queue.length > 0 && crawled.length < maxPages) {
-    const url = queue.shift()!
-    if (visited.has(url)) continue
-    // Only crawl same-origin
-    try {
-      if (new URL(url).origin !== origin) continue
-    } catch { continue }
-    visited.add(url)
-
-    const page = await fetchWithTimeout(url, 8000)
-    if (!page || page.status >= 400) continue
-
-    crawled.push(page)
-    processed++
-    onProgress?.(Math.min(100, Math.round((processed / maxPages) * 100)), `Crawled ${crawled.length} pages...`)
-
-    // Add newly discovered links to queue
-    for (const link of page.links) {
-      if (!visited.has(link)) queue.push(link)
+    // Take a batch of URLs to fetch concurrently
+    const batch: string[] = []
+    while (batch.length < concurrency && queue.length > 0 && crawled.length + batch.length < maxPages) {
+      const url = queue.shift()!
+      if (visited.has(url)) continue
+      try {
+        if (new URL(url).origin !== origin) continue
+      } catch { continue }
+      visited.add(url)
+      batch.push(url)
     }
+
+    if (batch.length === 0) break
+
+    // Fetch all URLs in the batch concurrently
+    const results = await Promise.allSettled(
+      batch.map(url => fetchWithTimeout(url, timeout))
+    )
+
+    for (const result of results) {
+      if (result.status !== 'fulfilled' || !result.value || result.value.status >= 400) continue
+      const page = result.value
+      crawled.push(page)
+      // Add newly discovered links to queue
+      for (const link of page.links) {
+        if (!visited.has(link)) queue.push(link)
+      }
+    }
+
+    onProgress?.(Math.min(100, Math.round((crawled.length / maxPages) * 100)), `Crawled ${crawled.length} pages...`)
   }
 
   return crawled

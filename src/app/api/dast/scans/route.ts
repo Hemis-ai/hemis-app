@@ -81,7 +81,7 @@ async function _getDbScans(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { name, targetUrl, scope, excludedPaths, authConfig, scanProfile } = body
+    const { name, targetUrl, scope, excludedPaths, authConfig, scanProfile, enableAiEnrichment } = body
 
     if (!name?.trim()) return NextResponse.json({ error: 'Scan name is required' }, { status: 400 })
     if (!targetUrl?.trim()) return NextResponse.json({ error: 'Target URL is required' }, { status: 400 })
@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
       })
 
       // Start scan in background (fire-and-forget)
-      runDastScan(scan.id).catch((err) => console.error('Background scan error:', err))
+      runDastScan(scan.id, { enableAiEnrichment: !!enableAiEnrichment }).catch((err) => console.error('Background scan error:', err))
 
       return NextResponse.json({ scan }, { status: 201 })
     }
@@ -128,15 +128,24 @@ export async function POST(req: NextRequest) {
     // No engine, no database — run built-in scanner directly and return results
     // This is the "standalone" mode: scan runs inline and returns findings immediately
     const scanId = `direct-${Date.now()}`
+    const profile = scanProfile ?? 'full'
     const scan = {
       id: scanId, orgId: 'org-demo', name: name.trim(), targetUrl: targetUrl.trim(),
-      scanProfile: scanProfile ?? 'full', status: 'RUNNING' as const, progress: 0,
+      scanProfile: profile, status: 'RUNNING' as const, progress: 0,
       currentPhase: 'initializing', startedAt: new Date().toISOString(),
     }
 
     // Return scan immediately, then the frontend will poll /api/dast/scans/[id] for progress
     // But since we don't have a DB, we'll run the scan and store results in-memory
-    const directScanPromise = runBuiltinScan(targetUrl).then(result => {
+    const directScanPromise = runBuiltinScan(targetUrl, {
+      scanProfile: profile,
+      onProgress: (percent, phase, message) => {
+        const entry = directScanStore.get(scanId)
+        if (entry) {
+          entry.scan = { ...entry.scan, progress: percent, currentPhase: phase, status: 'RUNNING' as const }
+        }
+      },
+    }).then(result => {
       const criticalCount = result.findings.filter(f => f.severity === 'CRITICAL').length
       const highCount = result.findings.filter(f => f.severity === 'HIGH').length
       const mediumCount = result.findings.filter(f => f.severity === 'MEDIUM').length

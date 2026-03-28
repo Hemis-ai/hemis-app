@@ -3,6 +3,41 @@
  * Adapted from hemisx-dast/src/reports/html.template.ts
  */
 
+export interface ReportFinding {
+  title: string
+  severity: string
+  cvssScore: number | null
+  cvssVector: string | null
+  owaspCategory: string
+  cweId: string | null
+  affectedUrl: string
+  affectedParameter: string | null
+  description: string
+  businessImpact: string | null
+  remediation: string
+  remediationCode: string | null
+  pciDssRefs: string[]
+  soc2Refs: string[]
+  mitreAttackIds: string[]
+  confidenceScore: number
+}
+
+export interface OwaspHeatmapEntry {
+  categoryId: string
+  categoryName: string
+  findingCount: number
+  highestSeverity: string
+  weightedScore: number
+}
+
+export interface CvssDistEntry { rangeLabel: string; count: number }
+export interface AttackSurfaceEntry { url: string; path: string; findingCount: number; highestSeverity: string }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface AttackChainData { attackChains?: any[]; duplicateGroups?: any[]; riskAmplifiers?: any[]; overallChainedRiskScore?: number }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface ComplianceData { frameworks?: any[]; highestRiskFramework?: string; complianceScore?: number; auditReadiness?: string; keyGaps?: string[] }
+
 export interface ReportData {
   scan: {
     id: string
@@ -26,24 +61,13 @@ export interface ReportData {
     total: number
   }
   executiveSummary: string | null
-  findings: Array<{
-    title: string
-    severity: string
-    cvssScore: number | null
-    cvssVector: string | null
-    owaspCategory: string
-    cweId: string | null
-    affectedUrl: string
-    affectedParameter: string | null
-    description: string
-    businessImpact: string | null
-    remediation: string
-    remediationCode: string | null
-    pciDssRefs: string[]
-    soc2Refs: string[]
-    mitreAttackIds: string[]
-    confidenceScore: number
-  }>
+  findings: ReportFinding[]
+  // Rich data matching the history tab
+  owaspHeatmap?: OwaspHeatmapEntry[]
+  cvssDistribution?: CvssDistEntry[]
+  attackSurface?: AttackSurfaceEntry[]
+  attackChainData?: AttackChainData | null
+  complianceData?: ComplianceData | null
   generatedAt: string
   orgId: string
 }
@@ -233,6 +257,117 @@ export function renderReport(data: ReportData): string {
 
   ${data.executiveSummary ? `<div style="background:#1a1a2e;border-radius:8px;padding:20px;font-size:13px;color:#c0c0d0;line-height:1.8;">${escapeHtml(data.executiveSummary)}</div>` : ''}
 </div>
+
+<!-- OWASP Top 10 Heatmap -->
+${data.owaspHeatmap && data.owaspHeatmap.length > 0 ? `
+<div class="page page-break">
+  <div style="font-size:22px;font-weight:700;color:#a259ff;margin-bottom:20px;border-bottom:2px solid #a259ff;padding-bottom:8px;">OWASP Top 10 Coverage</div>
+  <div style="background:#1a1a2e;border-radius:8px;padding:16px 20px;">
+    ${data.owaspHeatmap.map(h => `
+      <div style="display:flex;align-items:center;margin:8px 0;gap:12px;">
+        <div style="flex:1;font-size:12px;color:#c0c0d0;">${escapeHtml(h.categoryName)}</div>
+        <div style="width:60px;text-align:center;">${severityBadge(h.highestSeverity)}</div>
+        <div style="width:50px;text-align:right;font-weight:700;color:#a259ff;font-size:14px;">${h.findingCount}</div>
+        <div style="width:120px;height:16px;background:#2a2a3e;border-radius:4px;overflow:hidden;">
+          <div style="width:${Math.min(100, h.weightedScore * 5)}%;height:100%;background:${SEVERITY_COLORS[h.highestSeverity] ?? '#6c8eef'};border-radius:4px;"></div>
+        </div>
+      </div>
+    `).join('')}
+  </div>
+</div>` : ''}
+
+<!-- CVSS Distribution -->
+${data.cvssDistribution && data.cvssDistribution.length > 0 ? `
+<div class="page">
+  <div style="font-size:18px;font-weight:700;color:#a259ff;margin:24px 0 16px;">CVSS Score Distribution</div>
+  <div style="background:#1a1a2e;border-radius:8px;padding:16px 20px;">
+    ${data.cvssDistribution.map(d => {
+      const color = d.rangeLabel.startsWith('9') ? '#ff4d6a' : d.rangeLabel.startsWith('7') ? '#ff8c42' : d.rangeLabel.startsWith('4') ? '#ffc857' : d.rangeLabel.startsWith('0') ? '#4ecdc4' : '#6c8eef'
+      const max = Math.max(...(data.cvssDistribution ?? []).map(x => x.count), 1)
+      return `<div style="display:flex;align-items:center;margin:6px 0;">
+        <div style="width:90px;font-size:12px;color:#8e8ea0;">${d.rangeLabel}</div>
+        <div style="flex:1;height:20px;background:#2a2a3e;border-radius:4px;overflow:hidden;margin:0 10px;">
+          <div style="width:${(d.count / max) * 100}%;height:100%;background:${color};border-radius:4px;"></div>
+        </div>
+        <div style="width:30px;text-align:right;font-weight:700;color:${color};">${d.count}</div>
+      </div>`
+    }).join('')}
+  </div>
+</div>` : ''}
+
+<!-- Attack Surface Map -->
+${data.attackSurface && data.attackSurface.length > 0 ? `
+<div class="page">
+  <div style="font-size:18px;font-weight:700;color:#a259ff;margin:24px 0 16px;">Attack Surface — Most Affected Endpoints</div>
+  <div style="background:#1a1a2e;border-radius:8px;padding:16px 20px;">
+    ${data.attackSurface.slice(0, 15).map(e => `
+      <div style="display:flex;align-items:center;margin:6px 0;gap:10px;">
+        <div style="width:20px;text-align:center;">${severityBadge(e.highestSeverity)}</div>
+        <div style="flex:1;font-size:11px;color:#a259ff;word-break:break-all;">${escapeHtml(e.path)}</div>
+        <div style="font-size:12px;font-weight:700;color:#e0e0e0;">${e.findingCount} finding${e.findingCount !== 1 ? 's' : ''}</div>
+      </div>
+    `).join('')}
+  </div>
+</div>` : ''}
+
+<!-- Attack Chains (AI) -->
+${data.attackChainData?.attackChains?.length ? `
+<div class="page page-break">
+  <div style="font-size:22px;font-weight:700;color:#a259ff;margin-bottom:20px;border-bottom:2px solid #a259ff;padding-bottom:8px;">Attack Chains</div>
+  ${data.attackChainData.overallChainedRiskScore != null ? `
+    <div style="background:#1a1a2e;border-radius:8px;padding:14px 18px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
+      <div><div style="font-size:11px;color:#8e8ea0;letter-spacing:1px;">CHAINED RISK SCORE</div><div style="font-size:11px;color:#c0c0d0;margin-top:2px;">Combined risk considering attack chain amplification</div></div>
+      <div style="font-size:32px;font-weight:800;color:${data.attackChainData.overallChainedRiskScore >= 75 ? '#ff4d6a' : data.attackChainData.overallChainedRiskScore >= 50 ? '#ff8c42' : '#ffc857'};">${data.attackChainData.overallChainedRiskScore}</div>
+    </div>` : ''}
+  ${data.attackChainData.attackChains.map((chain: { name: string; description: string; severity: string; exploitationSteps?: string[]; businessImpact?: string; likelihoodOfExploitation?: string }) => `
+    <div style="background:#1a1a2e;border-radius:8px;padding:16px 20px;margin-bottom:12px;border-left:4px solid ${SEVERITY_COLORS[chain.severity] ?? '#8e8ea0'};">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div style="font-size:14px;font-weight:700;color:#e0e0e0;">${escapeHtml(chain.name)}</div>
+        ${severityBadge(chain.severity)}
+      </div>
+      <div style="font-size:12px;color:#c0c0d0;margin-bottom:10px;">${escapeHtml(chain.description)}</div>
+      ${chain.exploitationSteps?.length ? `
+        <div style="font-size:10px;color:#8e8ea0;letter-spacing:1px;margin-bottom:4px;">EXPLOITATION PATH</div>
+        <div style="background:#12121f;padding:10px;border-radius:4px;margin-bottom:8px;">
+          ${chain.exploitationSteps.map((s: string, i: number) => `<div style="font-size:11px;color:#c0c0d0;margin-bottom:4px;"><span style="color:#a259ff;font-weight:700;">${i + 1}.</span> ${escapeHtml(s)}</div>`).join('')}
+        </div>` : ''}
+      ${chain.businessImpact ? `<div style="font-size:11px;color:#ffc857;font-style:italic;background:#1e1e30;padding:8px 10px;border-radius:4px;">${escapeHtml(chain.businessImpact)}</div>` : ''}
+    </div>
+  `).join('')}
+</div>` : ''}
+
+<!-- Compliance Overview (AI) -->
+${data.complianceData?.frameworks?.length ? `
+<div class="page page-break">
+  <div style="font-size:22px;font-weight:700;color:#a259ff;margin-bottom:20px;border-bottom:2px solid #a259ff;padding-bottom:8px;">Compliance Overview</div>
+  <div style="display:flex;gap:12px;margin-bottom:20px;">
+    ${data.complianceData.complianceScore != null ? `<div style="flex:1;background:#1a1a2e;border-radius:8px;padding:14px;text-align:center;">
+      <div style="font-size:28px;font-weight:800;color:${(data.complianceData.complianceScore ?? 0) >= 80 ? '#4ecdc4' : (data.complianceData.complianceScore ?? 0) >= 50 ? '#ffc857' : '#ff4d6a'};">${data.complianceData.complianceScore}%</div>
+      <div style="font-size:11px;color:#8e8ea0;">Compliance Score</div>
+    </div>` : ''}
+    ${data.complianceData.auditReadiness ? `<div style="flex:1;background:#1a1a2e;border-radius:8px;padding:14px;text-align:center;">
+      <div style="font-size:16px;font-weight:700;color:#e0e0e0;">${escapeHtml(data.complianceData.auditReadiness)}</div>
+      <div style="font-size:11px;color:#8e8ea0;">Audit Readiness</div>
+    </div>` : ''}
+    ${data.complianceData.highestRiskFramework ? `<div style="flex:1;background:#1a1a2e;border-radius:8px;padding:14px;text-align:center;">
+      <div style="font-size:16px;font-weight:700;color:#ff8c42;">${escapeHtml(data.complianceData.highestRiskFramework)}</div>
+      <div style="font-size:11px;color:#8e8ea0;">Highest Risk Framework</div>
+    </div>` : ''}
+  </div>
+  ${data.complianceData.frameworks.map((fw: { name: string; overallStatus: string; controlsAffected: number; totalControlsChecked: number }) => `
+    <div style="background:#1a1a2e;border-radius:8px;padding:14px 18px;margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:14px;font-weight:600;color:#e0e0e0;">${escapeHtml(fw.name)}</div>
+        <div style="font-size:11px;color:#8e8ea0;">${fw.controlsAffected}/${fw.totalControlsChecked} Controls Affected</div>
+      </div>
+    </div>
+  `).join('')}
+  ${data.complianceData.keyGaps?.length ? `
+    <div style="margin-top:16px;">
+      <div style="font-size:13px;font-weight:600;color:#e0e0e0;margin-bottom:8px;">Key Compliance Gaps</div>
+      ${data.complianceData.keyGaps.map((g: string, i: number) => `<div style="font-size:12px;color:#ff8c42;margin-bottom:4px;">${i + 1}. ${escapeHtml(g)}</div>`).join('')}
+    </div>` : ''}
+</div>` : ''}
 
 <!-- Detailed Findings -->
 <div class="page page-break">
