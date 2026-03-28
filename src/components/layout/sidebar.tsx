@@ -91,12 +91,13 @@ export default function Sidebar() {
       <div style={{ padding: '18px 16px 16px', borderBottom: '1px solid var(--color-border)' }}>
         <Link href="/dashboard" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
-            width: 30, height: 30,
-            background: 'var(--color-yellow)',
+            width: 32, height: 32,
+            background: '#0a0d0f',
+            borderRadius: 8,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0,
           }}>
-            <Zap size={15} color="#0a0d0f" strokeWidth={2.5} />
+            <Zap size={16} color="#ffffff" strokeWidth={2.5} />
           </div>
           <div>
             <div className="display" style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
