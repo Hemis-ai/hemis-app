@@ -106,6 +106,7 @@ export default function DastPage() {
   const [newScanName, setNewScanName] = useState('')
   const [newScanUrl, setNewScanUrl] = useState('')
   const [newScanProfile, setNewScanProfile] = useState<'full' | 'quick' | 'api_only' | 'deep'>('full')
+  const [enableAi, setEnableAi] = useState(false)
 
   // ── Advanced config state ──
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -138,6 +139,9 @@ export default function DastPage() {
   // ── Scan progress state ──
   const [isScanning, setIsScanning] = useState(false)
   const [scanProgress, setScanProgress] = useState<DastScanProgress | null>(null)
+  const [scanLog, setScanLog] = useState<Array<{ timestamp: string; phase: string; message: string }>>([])
+  const scanLogRef = useRef<HTMLDivElement | null>(null)
+  const logIndexRef = useRef(0)
   const progressRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -299,22 +303,33 @@ export default function DastPage() {
       const res = await fetch('/api/dast/scans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, targetUrl, scanProfile, authConfig, scope: scopeConfig }),
+        body: JSON.stringify({ name, targetUrl, scanProfile, authConfig, scope: scopeConfig, enableAiEnrichment: enableAi }),
       })
       if (res.ok) {
         const data = await res.json()
         const newScan = data.scan
         setIsScanning(true)
         setScanStartTime(Date.now())
+        setScanLog([])
+        logIndexRef.current = 0
         // Poll for progress
         pollRef.current = setInterval(async () => {
           try {
-            const pollRes = await fetch(`/api/dast/scans/${newScan.id}`)
+            const pollRes = await fetch(`/api/dast/scans/${newScan.id}?logSince=${logIndexRef.current}`)
             if (pollRes.ok) {
               const pollData = await pollRes.json()
               const scan = pollData.scan
               const progress = pollData.progress
               if (progress) setScanProgress(progress)
+              // Append new log entries
+              if (pollData.progressLog && Array.isArray(pollData.progressLog) && pollData.progressLog.length > 0) {
+                logIndexRef.current += pollData.progressLog.length
+                setScanLog(prev => {
+                  const combined = [...prev, ...pollData.progressLog]
+                  return combined.length > 200 ? combined.slice(-200) : combined
+                })
+                setTimeout(() => scanLogRef.current?.scrollTo({ top: scanLogRef.current.scrollHeight, behavior: 'smooth' }), 50)
+              }
               // Update progress from scan object if no separate progress event
               if (!progress && scan.progress != null && scan.status === 'RUNNING') {
                 setScanProgress({
@@ -425,48 +440,147 @@ export default function DastPage() {
       return 'CSV report downloaded.'
     }
 
-    // PDF (HTML report)
-    const findingsHtml = scanFindings.map(f => `
-      <tr>
-        <td><span class="sev-${f.severity.toLowerCase()}">${f.severity}</span></td>
-        <td>${f.title}</td>
-        <td>${f.owaspCategory}</td>
-        <td>${f.cvssScore ?? '-'}</td>
-        <td style="font-size:11px;word-break:break-all">${f.affectedUrl}</td>
-        <td style="font-size:11px">${f.remediation}</td>
-      </tr>
-    `).join('')
+    // PDF (HTML report) — dark theme matching history tab
+    const SC: Record<string, string> = { CRITICAL: '#ff4d6a', HIGH: '#ff8c42', MEDIUM: '#ffc857', LOW: '#4ecdc4', INFO: '#6c8eef' }
+    const SW: Record<string, number> = { CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1 }
+    const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
 
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DAST Report - ${scan.name}</title>
-    <style>
-      body{font-family:system-ui,sans-serif;max-width:1100px;margin:0 auto;padding:40px;color:#1a1a2e;background:#fff}
-      h1{font-size:24px;border-bottom:3px solid #7c3aed;padding-bottom:8px}
-      h2{font-size:16px;color:#7c3aed;margin-top:28px;letter-spacing:0.05em;text-transform:uppercase}
-      .meta{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin:16px 0}
-      .meta-box{background:#f8f7ff;border:1px solid #e5e0ff;padding:14px;text-align:center}
-      .meta-box .val{font-size:28px;font-weight:700;color:#7c3aed}
-      .meta-box .lbl{font-size:11px;color:#888;margin-top:4px}
-      table{width:100%;border-collapse:collapse;font-size:12px;margin:12px 0}
-      th{background:#7c3aed;color:#fff;padding:8px 10px;text-align:left;font-size:10px;letter-spacing:0.08em;text-transform:uppercase}
-      td{padding:8px 10px;border-bottom:1px solid #eee;vertical-align:top}
-      tr:nth-child(even){background:#faf9ff}
-      .sev-critical{color:#dc2626;font-weight:700}.sev-high{color:#ea580c;font-weight:700}
-      .sev-medium{color:#ca8a04;font-weight:700}.sev-low{color:#2563eb}.sev-info{color:#6b7280}
-      .summary{background:#f8f7ff;border-left:4px solid #7c3aed;padding:16px;margin:12px 0;line-height:1.7;white-space:pre-line;font-size:13px}
-      @media print{body{padding:20px}h1{font-size:20px}}
-    </style></head><body>
-    <h1>DAST Security Report</h1>
-    <div class="meta">
-      <div class="meta-box"><div class="val">${scan.riskScore}</div><div class="lbl">Risk Score</div></div>
-      <div class="meta-box"><div class="val">${scanFindings.length}</div><div class="lbl">Total Findings</div></div>
-      <div class="meta-box"><div class="val">${scan.endpointsTested}</div><div class="lbl">Endpoints Tested</div></div>
+    const risk = scan.riskScore ?? 0
+    const riskC = risk < 25 ? '#4ecdc4' : risk < 50 ? '#ffc857' : risk < 75 ? '#ff8c42' : '#ff4d6a'
+    const riskLabel = risk < 25 ? 'Low Risk' : risk < 50 ? 'Medium Risk' : risk < 75 ? 'High Risk' : 'Critical Risk'
+    const grades = [{ max: 20, g: 'A', c: '#4ecdc4', l: 'Excellent' },{ max: 40, g: 'B', c: '#84cc16', l: 'Good' },{ max: 60, g: 'C', c: '#ffc857', l: 'Fair' },{ max: 80, g: 'D', c: '#ff8c42', l: 'Poor' },{ max: 101, g: 'F', c: '#ff4d6a', l: 'Critical' }]
+    const grade = grades.find(t => risk < t.max) || grades[4]
+
+    const sevCounts = { CRITICAL: scan.criticalCount ?? 0, HIGH: scan.highCount ?? 0, MEDIUM: scan.mediumCount ?? 0, LOW: scan.lowCount ?? 0, INFO: scan.infoCount ?? 0 }
+    const total = Object.values(sevCounts).reduce((a, b) => a + b, 0) || 1
+
+    // Severity donut SVG
+    const r = 38, cx = 50, cy = 50, circ = 2 * Math.PI * r
+    let offset = 0
+    const donutParts = (Object.entries(sevCounts) as [string, number][]).map(([sev, count]) => {
+      const pct = count / total; const dash = pct * circ
+      const svg = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${SC[sev]}" stroke-width="12" stroke-dasharray="${dash} ${circ - dash}" stroke-dashoffset="${-offset}" transform="rotate(-90 50 50)"/>`
+      offset += dash; return svg
+    }).join('')
+
+    // OWASP grid
+    const OWASP_CATS = [
+      { id: 'A01:2021', name: 'Broken Access Control', short: 'A01' },{ id: 'A02:2021', name: 'Cryptographic Failures', short: 'A02' },
+      { id: 'A03:2021', name: 'Injection', short: 'A03' },{ id: 'A04:2021', name: 'Insecure Design', short: 'A04' },
+      { id: 'A05:2021', name: 'Security Misconfiguration', short: 'A05' },{ id: 'A06:2021', name: 'Vulnerable Components', short: 'A06' },
+      { id: 'A07:2021', name: 'Auth Failures', short: 'A07' },{ id: 'A08:2021', name: 'Data Integrity Failures', short: 'A08' },
+      { id: 'A09:2021', name: 'Logging Failures', short: 'A09' },{ id: 'A10:2021', name: 'SSRF', short: 'A10' },
+    ]
+    const owaspCounts: Record<string, { total: number; weight: number; highest: string }> = {}
+    for (const cat of OWASP_CATS) owaspCounts[cat.id] = { total: 0, weight: 0, highest: 'INFO' }
+    for (const f of scanFindings) {
+      const cat = f.owaspCategory
+      if (owaspCounts[cat]) {
+        owaspCounts[cat].total++; owaspCounts[cat].weight += SW[f.severity] || 0
+        const so = ['CRITICAL','HIGH','MEDIUM','LOW','INFO']
+        if (so.indexOf(f.severity) < so.indexOf(owaspCounts[cat].highest)) owaspCounts[cat].highest = f.severity
+      }
+    }
+    const maxOW = Math.max(...Object.values(owaspCounts).map(c => c.weight), 1)
+    const heatColor = (w: number, h: string) => {
+      if (w === 0) return '#1e1e30'
+      const int = Math.min(w / maxOW, 1)
+      const base = h === 'CRITICAL' ? [239,68,68] : h === 'HIGH' ? [249,115,22] : h === 'MEDIUM' ? [234,179,8] : [59,130,246]
+      return `rgba(${base[0]},${base[1]},${base[2]},${0.15 + int * 0.55})`
+    }
+
+    // CVSS distribution
+    const cvssRanges = [
+      { label: '9.0\u201310.0', min: 9, max: 10.1, color: '#ff4d6a' },{ label: '7.0\u20138.9', min: 7, max: 9, color: '#ff8c42' },
+      { label: '4.0\u20136.9', min: 4, max: 7, color: '#ffc857' },{ label: '0.1\u20133.9', min: 0.1, max: 4, color: '#4ecdc4' },
+      { label: 'N/A', min: -1, max: 0.1, color: '#6c8eef' },
+    ].map(rng => ({ ...rng, count: scanFindings.filter(f => { const s = f.cvssScore ?? 0; return s >= rng.min && s < rng.max }).length }))
+    const maxCvss = Math.max(...cvssRanges.map(r => r.count), 1)
+
+    // Attack surface
+    const surfMap = new Map<string, { count: number; sev: string }>()
+    for (const f of scanFindings) {
+      const e = surfMap.get(f.affectedUrl) ?? { count: 0, sev: 'INFO' }; e.count++
+      if ((SW[f.severity] ?? 0) > (SW[e.sev] ?? 0)) e.sev = f.severity; surfMap.set(f.affectedUrl, e)
+    }
+    const topEndpoints = Array.from(surfMap.entries()).sort((a, b) => b[1].count - a[1].count).slice(0, 15)
+
+    // AI data
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let aiChains: any = null; let aiCompliance: any = null
+    try { if (scan.aiCorrelationData) aiChains = JSON.parse(scan.aiCorrelationData) } catch { /* skip */ }
+    try { if (scan.aiComplianceData) aiCompliance = JSON.parse(scan.aiComplianceData) } catch { /* skip */ }
+
+    const breachCost = scanFindings.reduce((sum, f) => sum + (f.cvssScore || 0) * 52000, 0)
+    const breachStr = breachCost >= 1000000 ? `$${(breachCost / 1000000).toFixed(1)}M` : breachCost >= 1000 ? `$${(breachCost / 1000).toFixed(0)}K` : `$${breachCost.toFixed(0)}`
+    const breachColor = breachCost > 500000 ? '#ff4d6a' : breachCost > 100000 ? '#ff8c42' : '#4ecdc4'
+
+    // Finding cards
+    const findingsHtml = scanFindings.map((f, idx) => {
+      let codeBlock = ''
+      if (f.remediationCode) {
+        try {
+          const rc = JSON.parse(f.remediationCode)
+          codeBlock = `<div style="margin-top:12px"><div style="font-size:11px;color:#8e8ea0;margin-bottom:4px">Vulnerable Code:</div><pre style="background:#12121f;padding:10px;border-radius:4px;font-size:11px;color:#ff4d6a;overflow-x:auto;white-space:pre-wrap">${esc(rc.before || rc.vulnerableCode || '')}</pre><div style="font-size:11px;color:#8e8ea0;margin:8px 0 4px">Remediated Code:</div><pre style="background:#12121f;padding:10px;border-radius:4px;font-size:11px;color:#4ecdc4;overflow-x:auto;white-space:pre-wrap">${esc(rc.after || rc.remediatedCode || '')}</pre></div>`
+        } catch { /* skip */ }
+      }
+      const compRefs: string[] = []
+      if (f.pciDssRefs?.length) compRefs.push(`<strong>PCI-DSS:</strong> ${f.pciDssRefs.join(', ')}`)
+      if (f.soc2Refs?.length) compRefs.push(`<strong>SOC 2:</strong> ${f.soc2Refs.join(', ')}`)
+      if (f.mitreAttackIds?.length) compRefs.push(`<strong>MITRE:</strong> ${f.mitreAttackIds.join(', ')}`)
+      return `<div style="background:#1a1a2e;border-radius:8px;padding:16px 20px;margin-bottom:16px;border-left:4px solid ${SC[f.severity] ?? '#8e8ea0'};page-break-inside:avoid">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-size:14px;font-weight:700;color:#e0e0e0">${idx + 1}. ${esc(f.title)}</div><span style="display:inline-block;padding:2px 10px;border-radius:4px;background:${SC[f.severity]};color:#0f0f1a;font-weight:700;font-size:11px">${f.severity}</span></div>
+        <div style="font-size:11px;color:#8e8ea0;margin-bottom:8px">${f.cvssScore ? `CVSS ${f.cvssScore}` : ''} | ${esc(f.owaspCategory)} | Confidence: ${f.confidenceScore}%</div>
+        <div style="font-size:11px;color:#a259ff;margin-bottom:10px;word-break:break-all">${esc(f.affectedUrl)}</div>
+        <div style="font-size:12px;color:#c0c0d0;margin-bottom:10px">${esc(f.description).substring(0, 500)}</div>
+        ${f.businessImpact ? `<div style="font-size:12px;color:#ffc857;margin-bottom:10px"><strong>Business Impact:</strong> ${esc(f.businessImpact).substring(0, 400)}</div>` : ''}
+        <div style="font-size:12px;color:#4ecdc4"><strong>Remediation:</strong> ${esc(f.remediation).substring(0, 400)}</div>
+        ${codeBlock}${compRefs.length ? `<div style="margin-top:8px;padding:8px 12px;background:#1e1e30;border-radius:4px;font-size:11px;color:#8e8ea0">${compRefs.join(' | ')}</div>` : ''}
+      </div>`
+    }).join('')
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chainsHtml = aiChains?.attackChains?.length ? `<div style="margin-top:40px"><div style="font-size:22px;font-weight:700;color:#a259ff;margin-bottom:20px;border-bottom:2px solid #a259ff;padding-bottom:8px">Attack Chains</div>${aiChains.attackChains.map((c: any) => `<div style="background:#1a1a2e;border-radius:8px;padding:16px 20px;margin-bottom:12px;border-left:4px solid ${SC[c.severity] ?? '#8e8ea0'}"><div style="font-size:14px;font-weight:700;color:#e0e0e0;margin-bottom:8px">${esc(c.name)} <span style="display:inline-block;padding:2px 10px;border-radius:4px;background:${SC[c.severity]};color:#0f0f1a;font-weight:700;font-size:11px">${c.severity}</span></div><div style="font-size:12px;color:#c0c0d0;margin-bottom:10px">${esc(c.description)}</div>${c.exploitationSteps?.length ? `<div style="background:#12121f;padding:10px;border-radius:4px;margin-bottom:8px">${c.exploitationSteps.map((s: string, i: number) => `<div style="font-size:11px;color:#c0c0d0;margin-bottom:4px"><span style="color:#a259ff;font-weight:700">${i + 1}.</span> ${esc(s)}</div>`).join('')}</div>` : ''}${c.businessImpact ? `<div style="font-size:11px;color:#ffc857;font-style:italic">${esc(c.businessImpact)}</div>` : ''}</div>`).join('')}</div>` : ''
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const compHtml = aiCompliance?.frameworks?.length ? `<div style="margin-top:40px"><div style="font-size:22px;font-weight:700;color:#a259ff;margin-bottom:20px;border-bottom:2px solid #a259ff;padding-bottom:8px">Compliance Overview</div>${aiCompliance.frameworks.map((fw: any) => `<div style="background:#1a1a2e;border-radius:8px;padding:14px 18px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:14px;font-weight:600;color:#e0e0e0">${esc(fw.name)}</div><div style="font-size:11px;color:#8e8ea0">${fw.controlsAffected}/${fw.totalControlsChecked} Controls</div></div></div>`).join('')}</div>` : ''
+
+    const scanDuration = scan.startedAt && scan.completedAt ? `${Math.round((new Date(scan.completedAt).getTime() - new Date(scan.startedAt).getTime()) / 60000)} min` : 'N/A'
+
+    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>DAST Report - ${esc(scan.name)}</title>
+    <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;line-height:1.6;background:#0f0f1a;color:#e0e0e0}.page{padding:40px 50px;max-width:1100px;margin:0 auto}.section-title{font-size:22px;font-weight:700;color:#a259ff;margin-bottom:20px;border-bottom:2px solid #a259ff;padding-bottom:8px}.card{background:#1a1a2e;border-radius:8px}@media print{.page-break{page-break-before:always}.page{padding:20px 30px}}</style></head><body>
+    <div class="page" style="min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center">
+      <div style="font-size:16px;letter-spacing:4px;color:#a259ff;font-weight:600;margin-bottom:20px">HEMISX</div>
+      <div style="font-size:36px;font-weight:800;color:#e0e0e0;margin-bottom:10px">DAST Security Assessment</div>
+      <div style="font-size:18px;color:#8e8ea0;margin-bottom:40px">${esc(scan.targetUrl)}</div>
+      <svg viewBox="0 0 120 80" width="180" height="120"><path d="M 10 70 A 50 50 0 0 1 110 70" fill="none" stroke="#2a2a3e" stroke-width="8" stroke-linecap="round"/><path d="M 10 70 A 50 50 0 0 1 110 70" fill="none" stroke="${riskC}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${(risk / 100) * 157} 157"/><text x="60" y="55" text-anchor="middle" font-size="24" font-weight="800" fill="${riskC}" font-family="monospace">${risk}</text><text x="60" y="72" text-anchor="middle" font-size="9" fill="#8e8ea0" font-family="monospace">/ 100</text></svg>
+      <div style="font-size:14px;color:${riskC};font-weight:600;margin-top:8px">${riskLabel}</div>
+      <div style="margin-top:40px;font-size:12px;color:#8e8ea0"><div>Scan: ${esc(scan.name)} (${esc(scan.scanProfile)})</div><div>Duration: ${scanDuration} | Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div></div>
     </div>
-    <table><tr><td><strong>Target:</strong> ${scan.targetUrl}</td><td><strong>Profile:</strong> ${scan.scanProfile}</td><td><strong>Date:</strong> ${scan.completedAt ? new Date(scan.completedAt).toLocaleDateString() : 'N/A'}</td></tr>
-    <tr><td><strong>Critical:</strong> ${scan.criticalCount}</td><td><strong>High:</strong> ${scan.highCount}</td><td><strong>Medium:</strong> ${scan.mediumCount} | <strong>Low:</strong> ${scan.lowCount} | <strong>Info:</strong> ${scan.infoCount}</td></tr></table>
-    ${scan.executiveSummary ? `<h2>Executive Summary</h2><div class="summary">${scan.executiveSummary}</div>` : ''}
-    <h2>Findings</h2>
-    <table><thead><tr><th>Severity</th><th>Title</th><th>OWASP</th><th>CVSS</th><th>URL</th><th>Remediation</th></tr></thead><tbody>${findingsHtml}</tbody></table>
-    <p style="margin-top:40px;font-size:11px;color:#aaa;text-align:center">Generated by HemisX DAST Scanner on ${new Date().toLocaleString()}</p>
+    <div class="page page-break">
+      <div class="section-title">Security Posture Overview</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:16px;margin-bottom:24px">
+        <div class="card" style="padding:20px;text-align:center"><div style="font-size:10px;letter-spacing:0.12em;color:#8e8ea0;margin-bottom:12px;font-family:monospace">RISK SCORE</div><svg viewBox="0 0 120 80" width="120" height="80" style="display:block;margin:0 auto"><path d="M 10 70 A 50 50 0 0 1 110 70" fill="none" stroke="#2a2a3e" stroke-width="8" stroke-linecap="round"/><path d="M 10 70 A 50 50 0 0 1 110 70" fill="none" stroke="${riskC}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${(risk / 100) * 157} 157"/><text x="60" y="55" text-anchor="middle" font-size="24" font-weight="800" fill="${riskC}" font-family="monospace">${risk}</text><text x="60" y="72" text-anchor="middle" font-size="9" fill="#8e8ea0" font-family="monospace">/ 100</text></svg></div>
+        <div class="card" style="padding:20px;text-align:center"><div style="font-size:10px;letter-spacing:0.12em;color:#8e8ea0;margin-bottom:12px;font-family:monospace">SECURITY GRADE</div><div style="width:64px;height:64px;border-radius:50%;margin:0 auto;display:flex;align-items:center;justify-content:center;border:3px solid ${grade.c};background:${grade.c}15"><span style="font-size:32px;font-weight:900;color:${grade.c};font-family:monospace">${grade.g}</span></div><div style="font-size:10px;color:${grade.c};margin-top:8px;letter-spacing:0.1em;font-family:monospace">${grade.l.toUpperCase()}</div></div>
+        <div class="card" style="padding:20px;text-align:center"><div style="font-size:10px;letter-spacing:0.12em;color:#8e8ea0;margin-bottom:12px;font-family:monospace">SEVERITY BREAKDOWN</div><svg viewBox="0 0 100 100" width="80" height="80" style="display:block;margin:0 auto">${donutParts}<text x="50" y="48" text-anchor="middle" font-size="18" font-weight="800" fill="#e0e0e0" font-family="monospace">${total}</text><text x="50" y="60" text-anchor="middle" font-size="8" fill="#8e8ea0" font-family="monospace">FINDINGS</text></svg></div>
+        <div class="card" style="padding:20px;text-align:center"><div style="font-size:10px;letter-spacing:0.12em;color:#8e8ea0;margin-bottom:12px;font-family:monospace">EST. BREACH EXPOSURE</div><div style="font-size:28px;font-weight:800;color:${breachColor};font-family:monospace;margin-top:20px">${breachStr}</div></div>
+      </div>
+      <div style="display:flex;gap:12px;margin-bottom:24px">${[{ label: 'Critical', count: sevCounts.CRITICAL, color: '#ff4d6a' },{ label: 'High', count: sevCounts.HIGH, color: '#ff8c42' },{ label: 'Medium', count: sevCounts.MEDIUM, color: '#ffc857' },{ label: 'Low', count: sevCounts.LOW, color: '#4ecdc4' },{ label: 'Info', count: sevCounts.INFO, color: '#6c8eef' }].map(e => `<div style="flex:1;background:#1a1a2e;border-radius:8px;padding:14px;text-align:center;border-top:3px solid ${e.color}"><div style="font-size:28px;font-weight:800;color:${e.color}">${e.count}</div><div style="font-size:11px;color:#8e8ea0">${e.label}</div></div>`).join('')}</div>
+      <div style="display:flex;gap:12px;margin-bottom:24px">${[{ label: 'Endpoints Discovered', value: scan.endpointsDiscovered ?? 0 },{ label: 'Endpoints Tested', value: scan.endpointsTested ?? 0 },{ label: 'Payloads Sent', value: scan.payloadsSent ?? 0 },{ label: 'Total Findings', value: scanFindings.length }].map(m => `<div style="flex:1;background:#1a1a2e;border-radius:8px;padding:14px;text-align:center"><div style="font-size:24px;font-weight:700;color:#a259ff">${m.value}</div><div style="font-size:11px;color:#8e8ea0">${m.label}</div></div>`).join('')}</div>
+      ${scan.techStackDetected?.length ? `<div style="background:#1a1a2e;border-radius:8px;padding:12px 16px;margin-bottom:24px;font-size:12px;color:#8e8ea0"><strong style="color:#e0e0e0">Detected Technology:</strong> ${scan.techStackDetected.map(t => esc(t)).join(', ')}</div>` : ''}
+      ${scan.executiveSummary ? `<div style="background:#1a1a2e;border-radius:8px;padding:20px;font-size:13px;color:#c0c0d0;line-height:1.8">${esc(scan.executiveSummary)}</div>` : ''}
+    </div>
+    <div class="page page-break">
+      <div class="section-title">OWASP Top 10 Coverage</div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:24px">${OWASP_CATS.map(cat => { const d = owaspCounts[cat.id]; return `<div style="padding:12px 10px;border-radius:6px;text-align:center;background:${heatColor(d.weight, d.highest)};border:1px solid #2a2a3e"><div style="font-size:11px;font-weight:700;color:#e0e0e0;margin-bottom:2px;font-family:monospace">${cat.short}</div><div style="font-size:8px;color:#8e8ea0;line-height:1.2;margin-bottom:4px">${cat.name}</div><div style="font-size:16px;font-weight:800;color:${d.total > 0 ? '#e0e0e0' : '#8e8ea0'};font-family:monospace">${d.total}</div></div>` }).join('')}</div>
+      <div style="font-size:18px;font-weight:700;color:#a259ff;margin:24px 0 16px">CVSS Score Distribution</div>
+      <div class="card" style="padding:16px 20px;margin-bottom:24px">${cvssRanges.map(rng => `<div style="display:flex;align-items:center;margin:6px 0"><div style="width:80px;font-size:12px;color:#8e8ea0;font-family:monospace">${rng.label}</div><div style="flex:1;height:20px;background:#2a2a3e;border-radius:4px;overflow:hidden;margin:0 10px"><div style="width:${(rng.count / maxCvss) * 100}%;height:100%;background:${rng.color};border-radius:4px;min-width:${rng.count > 0 ? '4px' : '0'}"></div></div><div style="width:30px;text-align:right;font-weight:700;color:${rng.color};font-family:monospace">${rng.count}</div></div>`).join('')}</div>
+      ${topEndpoints.length > 0 ? `<div style="font-size:18px;font-weight:700;color:#a259ff;margin:24px 0 16px">Attack Surface</div><div class="card" style="padding:16px 20px"><div style="display:flex;flex-wrap:wrap;gap:8px">${topEndpoints.map(([url, v]) => { let path = url; try { path = new URL(url).pathname } catch { /* keep */ } return `<div style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:4px;background:${SC[v.sev]}15;border:1px solid ${SC[v.sev]}40"><span style="font-size:11px;color:${SC[v.sev]};font-weight:700;font-family:monospace">${v.count}</span><span style="font-size:10px;color:#c0c0d0;font-family:monospace;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(path)}</span></div>` }).join('')}</div></div>` : ''}
+    </div>
+    ${chainsHtml ? `<div class="page page-break">${chainsHtml}</div>` : ''}
+    ${compHtml ? `<div class="page page-break">${compHtml}</div>` : ''}
+    <div class="page page-break"><div class="section-title">Detailed Findings (${scanFindings.length})</div>${findingsHtml}</div>
+    <div class="page" style="margin-top:40px;text-align:center;font-size:11px;color:#8e8ea0;border-top:1px solid #2a2a3e;padding-top:16px">Generated by HemisX DAST | ${new Date().toISOString()} | Confidential</div>
     </body></html>`
 
     const blob = new Blob([html], { type: 'text/html' })
@@ -650,6 +764,37 @@ export default function DastPage() {
                   </div>
                 ))}
               </div>
+
+              {/* Live Activity Feed */}
+              {scanLog.length > 0 && (
+                <div style={{ marginTop: 14 }}>
+                  <div className="mono" style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.12em', color: 'var(--color-text-dim)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--color-dast)', display: 'inline-block', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                    LIVE ACTIVITY FEED
+                  </div>
+                  <div
+                    ref={scanLogRef}
+                    style={{
+                      maxHeight: 180, overflowY: 'auto', background: 'var(--color-bg-elevated)',
+                      border: '1px solid var(--color-border)', padding: '8px 10px',
+                      fontFamily: 'var(--font-mono)', fontSize: 10, lineHeight: 1.8,
+                    }}
+                  >
+                    {scanLog.map((entry, i) => {
+                      const time = new Date(entry.timestamp)
+                      const ts = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}:${time.getSeconds().toString().padStart(2, '0')}`
+                      const phaseColor = entry.phase === 'crawling' ? 'var(--color-medium)' : entry.phase === 'scanning' ? 'var(--color-high)' : entry.phase === 'analyzing' ? 'var(--color-dast)' : entry.phase === 'complete' ? 'var(--color-scanner)' : 'var(--color-text-dim)'
+                      return (
+                        <div key={i} style={{ display: 'flex', gap: 8, color: 'var(--color-text-secondary)' }}>
+                          <span style={{ color: 'var(--color-text-dim)', flexShrink: 0 }}>{ts}</span>
+                          <span style={{ color: phaseColor, flexShrink: 0, minWidth: 70, textTransform: 'uppercase', fontSize: 9, fontWeight: 600 }}>{entry.phase}</span>
+                          <span>{entry.message}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -765,6 +910,38 @@ export default function DastPage() {
                 <div>
                   <label className="mono" style={{ fontSize: 10, color: 'var(--color-text-dim)', letterSpacing: '0.1em' }}>SCAN NAME</label>
                   <input className="tac-input" placeholder="My Web App Scan" style={{ marginTop: 4 }} value={newScanName} onChange={e => setNewScanName(e.target.value)} />
+                </div>
+              </div>
+
+              {/* AI Enrichment Toggle */}
+              <div
+                onClick={() => setEnableAi(!enableAi)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  background: enableAi ? 'var(--color-dast-dim)' : 'var(--color-bg-elevated)',
+                  border: `1px solid ${enableAi ? 'var(--color-dast)' : 'var(--color-border)'}`,
+                  padding: '12px 16px', marginBottom: 16, cursor: 'pointer',
+                  transition: 'all 0.12s',
+                }}
+              >
+                <div style={{
+                  width: 36, height: 20, borderRadius: 10, position: 'relative',
+                  background: enableAi ? 'var(--color-dast)' : 'var(--color-border)',
+                  transition: 'background 0.2s', flexShrink: 0,
+                }}>
+                  <div style={{
+                    width: 16, height: 16, borderRadius: 8, background: '#fff',
+                    position: 'absolute', top: 2,
+                    left: enableAi ? 18 : 2, transition: 'left 0.2s',
+                  }} />
+                </div>
+                <div>
+                  <div className="mono" style={{ fontSize: 11, fontWeight: 600, color: enableAi ? 'var(--color-dast)' : 'var(--color-text-primary)', letterSpacing: '0.08em' }}>
+                    AI ANALYSIS
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 2 }}>
+                    Attack chains, compliance mapping, AI-powered remediation code &nbsp;&middot;&nbsp; Adds ~2-5 min
+                  </div>
                 </div>
               </div>
 
