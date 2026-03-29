@@ -11,12 +11,13 @@ export default function Services() {
   useEffect(() => {
     const fetchServices = async () => {
       try {
+        if (!supabase) throw new Error('Supabase not configured')
         const { data, error } = await supabase
           .from('Services')
           .select('*')
 
         if (error) throw error
-        setServices(data)
+        setServices(data || [])
       } catch (err) {
         setError(err.message)
       } finally {
