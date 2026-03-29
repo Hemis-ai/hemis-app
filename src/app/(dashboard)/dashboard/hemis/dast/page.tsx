@@ -12,6 +12,7 @@ import MonitoringTab from '@/components/dast/MonitoringTab'
 import IntegrationsTab from '@/components/dast/IntegrationsTab'
 
 const AttackGraph3D = lazy(() => import('@/components/dast/AttackGraph3D'))
+const LiveAttackFeed = lazy(() => import('@/components/dast/LiveAttackFeed/LiveAttackFeed'))
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -796,6 +797,13 @@ export default function DastPage() {
                 </div>
               )}
             </div>
+          )}
+
+          {/* Live Attack Feed */}
+          {isScanning && scanProgress && (
+            <Suspense fallback={<div className="bracket-card bracket-dast" style={{ height: 200, marginBottom: 20 }} />}>
+              <LiveAttackFeed scanId={scanProgress.scanId} isScanning={isScanning} scanProgress={scanProgress} />
+            </Suspense>
           )}
 
           {/* Scan Error Banner */}

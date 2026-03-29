@@ -237,8 +237,33 @@ function enrichFinding(f: BuiltinFinding): BuiltinFinding {
 let _payloadCounter = 0
 function countPayload() { _payloadCounter++ }
 
+// Module-level telemetry state (set per-scan in runBuiltinScan)
+let _telemetryEmitter: TelemetryEmitter | null = null
+let _currentPhase = 'initializing'
+
+function emitTelemetry(method: string, url: string, attackVector: string, payload: string | null, httpStatus: number, latencyMs: number, severity?: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO' | null, findingTitle?: string | null) {
+  if (!_telemetryEmitter) return
+  let endpoint: string
+  try { endpoint = new URL(url).pathname } catch { endpoint = url }
+  _telemetryEmitter({
+    method, targetUrl: url, endpoint, attackVector, payload,
+    httpStatus, latencyMs,
+    severity: severity ?? null,
+    findingTitle: findingTitle ?? null,
+    phase: _currentPhase,
+  })
+}
+
+export type TelemetryEmitter = (data: {
+  method: string; targetUrl: string; endpoint: string; attackVector: string;
+  payload: string | null; httpStatus: number; latencyMs: number;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO' | null;
+  findingTitle: string | null; phase: string;
+}) => void
+
 export interface BuiltinScanOptions {
   onProgress?: (percent: number, phase: string, message: string) => void
+  onTelemetry?: TelemetryEmitter
   scanProfile?: 'quick' | 'full' | 'api_only' | 'deep'
 }
 
@@ -262,9 +287,12 @@ export async function runBuiltinScan(
   const options: BuiltinScanOptions = typeof optionsOrProgress === 'function'
     ? { onProgress: optionsOrProgress }
     : optionsOrProgress ?? {}
-  const { onProgress, scanProfile = 'full' } = options
+  const { onProgress, onTelemetry, scanProfile = 'full' } = options
   const settings = PROFILE_SETTINGS[scanProfile] ?? PROFILE_SETTINGS.full
   const skipSet = new Set(settings.skipChecks)
+  // Module-level telemetry callback for fetchWithTimeout and check helpers
+  _telemetryEmitter = onTelemetry ?? null
+  _currentPhase = 'initializing'
 
   const findings: BuiltinFinding[] = []
   const techStack: string[] = []
@@ -279,6 +307,7 @@ export async function runBuiltinScan(
   onProgress?.(5, 'initializing', `Target reachable (HTTP ${baseResponse.status})`)
 
   // Phase 2: Crawl and discover pages (5-30%) — concurrent crawling
+  _currentPhase = 'crawling'
   onProgress?.(6, 'crawling', 'Crawling target site...')
   const crawled = await crawlSiteConcurrent(targetUrl, baseResponse, settings.maxPages, settings.crawlConcurrency, settings.crawlTimeout, (percent, msg) => {
     onProgress?.(5 + Math.round(percent * 0.25), 'crawling', msg)
@@ -286,6 +315,7 @@ export async function runBuiltinScan(
   onProgress?.(30, 'crawling', `Discovered ${crawled.length} pages`)
 
   // Phase 3: Detect tech stack (30-35%)
+  _currentPhase = 'scanning'
   onProgress?.(31, 'scanning', 'Detecting technology stack...')
   detectTechStack(baseResponse, techStack)
 
@@ -382,7 +412,9 @@ export async function runBuiltinScan(
   // Enrich all findings with compliance refs, MITRE IDs, CVSS vectors, business impact, remediation code
   const enriched = unique.map(enrichFinding)
 
+  _currentPhase = 'complete'
   onProgress?.(100, 'complete', `Scan complete. Found ${enriched.length} issues.`)
+  _telemetryEmitter = null
 
   return {
     findings: enriched,
@@ -395,7 +427,8 @@ export async function runBuiltinScan(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-async function fetchWithTimeout(url: string, timeout = 10000): Promise<CrawledPage | null> {
+async function fetchWithTimeout(url: string, timeout = 10000, telemetryVector = 'Crawl'): Promise<CrawledPage | null> {
+  const start = Date.now()
   try {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeout)
@@ -408,12 +441,15 @@ async function fetchWithTimeout(url: string, timeout = 10000): Promise<CrawledPa
       },
     })
     clearTimeout(timer)
+    const latency = Date.now() - start
+    emitTelemetry('GET', url, telemetryVector, null, res.status, latency)
     const body = await res.text()
     const headers: Record<string, string> = {}
     res.headers.forEach((v, k) => { headers[k.toLowerCase()] = v })
     const links = extractLinks(body, url)
     return { url: res.url, status: res.status, headers, body, links }
   } catch {
+    emitTelemetry('GET', url, telemetryVector, null, 0, Date.now() - start)
     return null
   }
 }
@@ -835,12 +871,14 @@ async function checkBackupFiles(targetUrl: string, findings: BuiltinFinding[], o
       const url = new URL(path, targetUrl).href
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 5000)
+      const fetchStart = Date.now()
       const res = await fetch(url, {
         signal: controller.signal,
         redirect: 'follow',
         headers: { 'User-Agent': 'HemisX-DAST-Scanner/1.0 (Security Audit)' },
       })
       clearTimeout(timer)
+      emitTelemetry('GET', url, 'Sensitive File Probe', path, res.status, Date.now() - fetchStart)
 
       if (res.ok && res.status === 200) {
         const ct = res.headers.get('content-type') || ''
@@ -903,6 +941,7 @@ async function checkCORSActive(targetUrl: string, findings: BuiltinFinding[]) {
     countPayload()
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 8000)
+    const corsStart = Date.now()
     const res = await fetch(targetUrl, {
       signal: controller.signal,
       headers: {
@@ -911,6 +950,7 @@ async function checkCORSActive(targetUrl: string, findings: BuiltinFinding[]) {
       },
     })
     clearTimeout(timer)
+    emitTelemetry('GET', targetUrl, 'CORS Active Test', `Origin: ${evilOrigin}`, res.status, Date.now() - corsStart)
 
     const acao = res.headers.get('access-control-allow-origin')
     const acac = res.headers.get('access-control-allow-credentials')
@@ -935,6 +975,7 @@ async function checkCORSActive(targetUrl: string, findings: BuiltinFinding[]) {
     countPayload()
     const controller2 = new AbortController()
     const timer2 = setTimeout(() => controller2.abort(), 8000)
+    const corsStart2 = Date.now()
     const res2 = await fetch(targetUrl, {
       signal: controller2.signal,
       headers: {
@@ -943,6 +984,7 @@ async function checkCORSActive(targetUrl: string, findings: BuiltinFinding[]) {
       },
     })
     clearTimeout(timer2)
+    emitTelemetry('GET', targetUrl, 'CORS Null Origin Test', 'Origin: null', res2.status, Date.now() - corsStart2)
 
     const acao2 = res2.headers.get('access-control-allow-origin')
     if (acao2 === 'null') {
@@ -1357,11 +1399,13 @@ async function checkPrototypePollution(targetUrl: string, findings: BuiltinFindi
       const testUrl = `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}${payload}`
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 5000)
+      const ppStart = Date.now()
       const res = await fetch(testUrl, {
         signal: controller.signal,
         headers: { 'User-Agent': 'HemisX-DAST-Scanner/1.0 (Security Audit)' },
       })
       clearTimeout(timer)
+      emitTelemetry('GET', testUrl, 'Prototype Pollution', payload, res.status, Date.now() - ppStart)
 
       const body = await res.text()
       // Check if our pollution value appears in the response (indicating server-side pollution)
@@ -1431,12 +1475,14 @@ async function checkAdminDebugEndpoints(targetUrl: string, findings: BuiltinFind
       const url = new URL(ep.path, targetUrl).href
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 5000)
+      const epStart = Date.now()
       const res = await fetch(url, {
         signal: controller.signal,
         redirect: 'follow',
         headers: { 'User-Agent': 'HemisX-DAST-Scanner/1.0 (Security Audit)' },
       })
       clearTimeout(timer)
+      emitTelemetry('GET', url, 'Endpoint Probe', ep.path, res.status, Date.now() - epStart)
 
       if (res.status === 200) {
         const body = await res.text()
@@ -1614,12 +1660,14 @@ async function checkHTTPMethods(pages: CrawledPage[], findings: BuiltinFinding[]
       countPayload()
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 5000)
+      const hmStart = Date.now()
       const res = await fetch(url, {
         method: 'OPTIONS',
         signal: controller.signal,
         headers: { 'User-Agent': 'HemisX-DAST-Scanner/1.0 (Security Audit)' },
       })
       clearTimeout(timer)
+      emitTelemetry('OPTIONS', url, 'HTTP Methods Enum', null, res.status, Date.now() - hmStart)
 
       const allow = res.headers.get('allow')
       if (!allow) continue

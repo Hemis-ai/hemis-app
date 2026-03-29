@@ -15,6 +15,7 @@ import { calculateCvss, PRESET_VECTORS, cvssToSeverity } from './engine/scoring/
 import { getOwaspMappingOrDefault } from './engine/scoring/owasp-mapper'
 import { enrichScanFindings } from './ai/enrichment-service'
 import { runBuiltinScan, type BuiltinFinding } from './builtin-scanner'
+import { pushTelemetryEvent, clearTelemetry } from './telemetry-store'
 
 // In-memory progress store for SSE polling — includes a scrolling activity log
 export interface ProgressLogEntry {
@@ -258,7 +259,7 @@ export async function runDastScan(scanId: string, options?: { enableAiEnrichment
   } finally {
     // Clean up progress store to prevent unbounded memory growth.
     // Allow a brief delay so any final SSE poll can read the terminal status.
-    setTimeout(() => clearProgress(scanId), 30_000)
+    setTimeout(() => { clearProgress(scanId); clearTelemetry(scanId) }, 30_000)
   }
 }
 
@@ -400,6 +401,7 @@ async function runBuiltinDastScan(scanId: string, targetUrl: string, scanProfile
           }).catch(() => {})
         }
       },
+      onTelemetry: (event) => pushTelemetryEvent(scanId, event),
     })
 
     // Persist findings to database with full enrichment data
@@ -504,6 +506,6 @@ async function runBuiltinDastScan(scanId: string, targetUrl: string, scanProfile
     })
     emitProgress(scanId, 'FAILED', -1, 'failed', `Scan failed: ${errorMsg}`)
   } finally {
-    setTimeout(() => clearProgress(scanId), 30_000)
+    setTimeout(() => { clearProgress(scanId); clearTelemetry(scanId) }, 30_000)
   }
 }
