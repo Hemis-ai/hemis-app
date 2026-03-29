@@ -582,17 +582,7 @@ function checkSecurityHeaders(page: CrawledPage, findings: BuiltinFinding[]) {
     })
   }
 
-  if (!h['x-frame-options'] && !h['content-security-policy']?.includes('frame-ancestors')) {
-    findings.push({
-      type: 'MISSING_SECURITY_HEADERS', owaspCategory: 'A05:2021 Security Misconfiguration',
-      cweId: 'CWE-1021', severity: 'MEDIUM', cvssScore: 4.3, riskScore: 40,
-      title: 'Missing X-Frame-Options Header (Clickjacking)',
-      description: `${page.url} does not set X-Frame-Options or CSP frame-ancestors, making it vulnerable to clickjacking.`,
-      affectedUrl: page.url,
-      remediation: 'Set X-Frame-Options: DENY or SAMEORIGIN, or use CSP frame-ancestors directive.',
-      confidenceScore: 100,
-    })
-  }
+  // X-Frame-Options / clickjacking is handled by checkClickjacking() to avoid duplicate findings
 
   if (!h['referrer-policy']) {
     findings.push({
