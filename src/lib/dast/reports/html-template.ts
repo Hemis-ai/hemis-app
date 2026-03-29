@@ -186,6 +186,64 @@ export function renderReport(data: ReportData): string {
       ? `${Math.round((new Date(data.scan.completedAt).getTime() - new Date(data.scan.startedAt).getTime()) / 60000)} min`
       : 'N/A'
 
+  // Risk gauge + grade calculations
+  const risk = data.scan.riskScore
+  const riskC = risk < 25 ? '#4ecdc4' : risk < 50 ? '#ffc857' : risk < 75 ? '#ff8c42' : '#ff4d6a'
+  const riskLabel = risk < 25 ? 'Low Risk' : risk < 50 ? 'Medium Risk' : risk < 75 ? 'High Risk' : 'Critical Risk'
+  const gradeThresholds = [{ max: 20, g: 'A', c: '#4ecdc4', l: 'EXCELLENT' },{ max: 40, g: 'B', c: '#84cc16', l: 'GOOD' },{ max: 60, g: 'C', c: '#ffc857', l: 'FAIR' },{ max: 80, g: 'D', c: '#ff8c42', l: 'POOR' },{ max: 101, g: 'F', c: '#ff4d6a', l: 'CRITICAL' }]
+  const grade = gradeThresholds.find(t => risk < t.max) || gradeThresholds[4]
+
+  // Severity donut SVG
+  const total = data.counts.total || 1
+  const sevEntries: [string, number][] = [['CRITICAL', data.counts.critical],['HIGH', data.counts.high],['MEDIUM', data.counts.medium],['LOW', data.counts.low],['INFO', data.counts.info]]
+  const donutR = 38, donutCx = 50, donutCy = 50, donutCirc = 2 * Math.PI * donutR
+  let donutOffset = 0
+  const donutParts = sevEntries.map(([sev, count]) => {
+    const pct = count / total
+    const dash = pct * donutCirc
+    const svg = `<circle cx="${donutCx}" cy="${donutCy}" r="${donutR}" fill="none" stroke="${SEVERITY_COLORS[sev]}" stroke-width="12" stroke-dasharray="${dash} ${donutCirc - dash}" stroke-dashoffset="${-donutOffset}" transform="rotate(-90 50 50)"/>`
+    donutOffset += dash
+    return svg
+  }).join('')
+
+  // Breach cost estimate
+  const breachCost = data.findings.reduce((sum, f) => sum + (f.cvssScore || 0) * 52000, 0)
+  const breachStr = breachCost >= 1000000 ? `$${(breachCost / 1000000).toFixed(1)}M` : breachCost >= 1000 ? `$${(breachCost / 1000).toFixed(0)}K` : `$${breachCost.toFixed(0)}`
+  const breachColor = breachCost > 500000 ? '#ff4d6a' : breachCost > 100000 ? '#ff8c42' : '#4ecdc4'
+
+  // OWASP grid data
+  const OWASP_CATS = [
+    { id: 'A01:2021', name: 'Broken Access Control', short: 'A01' },
+    { id: 'A02:2021', name: 'Cryptographic Failures', short: 'A02' },
+    { id: 'A03:2021', name: 'Injection', short: 'A03' },
+    { id: 'A04:2021', name: 'Insecure Design', short: 'A04' },
+    { id: 'A05:2021', name: 'Security Misconfiguration', short: 'A05' },
+    { id: 'A06:2021', name: 'Vulnerable Components', short: 'A06' },
+    { id: 'A07:2021', name: 'Auth Failures', short: 'A07' },
+    { id: 'A08:2021', name: 'Data Integrity Failures', short: 'A08' },
+    { id: 'A09:2021', name: 'Logging Failures', short: 'A09' },
+    { id: 'A10:2021', name: 'SSRF', short: 'A10' },
+  ]
+  const owaspGrid: Record<string, { total: number; weight: number; highest: string }> = {}
+  for (const cat of OWASP_CATS) owaspGrid[cat.id] = { total: 0, weight: 0, highest: 'INFO' }
+  const SW: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, INFO: 0.5 }
+  for (const f of data.findings) {
+    const cat = f.owaspCategory
+    if (owaspGrid[cat]) {
+      owaspGrid[cat].total++
+      owaspGrid[cat].weight += SW[f.severity] || 0
+      const sevOrder = ['CRITICAL','HIGH','MEDIUM','LOW','INFO']
+      if (sevOrder.indexOf(f.severity) < sevOrder.indexOf(owaspGrid[cat].highest)) owaspGrid[cat].highest = f.severity
+    }
+  }
+  const maxOWeight = Math.max(...Object.values(owaspGrid).map(c => c.weight), 1)
+  const heatColorFn = (w: number, h: string) => {
+    if (w === 0) return '#1e1e30'
+    const int = Math.min(w / maxOWeight, 1)
+    const base = h === 'CRITICAL' ? [239,68,68] : h === 'HIGH' ? [249,115,22] : h === 'MEDIUM' ? [234,179,8] : [59,130,246]
+    return `rgba(${base[0]},${base[1]},${base[2]},${(0.15 + int * 0.55).toFixed(2)})`
+  }
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -194,7 +252,9 @@ export function renderReport(data: ReportData): string {
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #0f0f1a; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px; line-height: 1.6; }
     .page { padding: 40px 50px; }
-    @media print { .page-break { page-break-before: always; } }
+    .section-title { font-size:22px;font-weight:700;color:#a259ff;margin-bottom:20px;border-bottom:2px solid #a259ff;padding-bottom:8px; }
+    .card { background:#1a1a2e;border-radius:8px; }
+    @media print { .page-break { page-break-before: always; } .page { padding: 20px 30px; } }
   </style>
 </head>
 <body>
@@ -204,17 +264,66 @@ export function renderReport(data: ReportData): string {
   <div style="font-size:16px;letter-spacing:4px;color:#a259ff;font-weight:600;margin-bottom:20px;">HEMISX</div>
   <div style="font-size:36px;font-weight:800;color:#e0e0e0;margin-bottom:10px;">DAST Security Assessment</div>
   <div style="font-size:18px;color:#8e8ea0;margin-bottom:40px;">${escapeHtml(data.scan.targetUrl)}</div>
-  ${riskGauge(data.scan.riskScore)}
+  <div style="text-align:center;margin:20px 0;">
+    <svg viewBox="0 0 120 80" width="180" height="120">
+      <path d="M 10 70 A 50 50 0 0 1 110 70" fill="none" stroke="#2a2a3e" stroke-width="8" stroke-linecap="round"/>
+      <path d="M 10 70 A 50 50 0 0 1 110 70" fill="none" stroke="${riskC}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${(risk / 100) * 157} 157"/>
+      <text x="60" y="55" text-anchor="middle" font-size="24" font-weight="800" fill="${riskC}" font-family="monospace">${risk}</text>
+      <text x="60" y="72" text-anchor="middle" font-size="9" fill="#8e8ea0" font-family="monospace">/ 100</text>
+    </svg>
+    <div style="font-size:14px;color:${riskC};font-weight:600;margin-top:8px;">${riskLabel}</div>
+  </div>
   <div style="margin-top:40px;font-size:12px;color:#8e8ea0;">
     <div>Scan: ${escapeHtml(data.scan.name)} (${escapeHtml(data.scan.scanProfile)})</div>
     <div>Duration: ${scanDuration} &nbsp;|&nbsp; Generated: ${new Date(data.generatedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
   </div>
 </div>
 
-<!-- Executive Summary -->
+<!-- Security Posture Overview -->
 <div class="page page-break">
-  <div style="font-size:22px;font-weight:700;color:#a259ff;margin-bottom:20px;border-bottom:2px solid #a259ff;padding-bottom:8px;">Executive Summary</div>
+  <div class="section-title">Security Posture Overview</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:16px;margin-bottom:24px;">
+    <!-- Risk Score Gauge -->
+    <div class="card" style="padding:20px;text-align:center;">
+      <div style="font-size:10px;letter-spacing:0.12em;color:#8e8ea0;margin-bottom:12px;font-family:monospace;">RISK SCORE</div>
+      <svg viewBox="0 0 120 80" width="120" height="80" style="display:block;margin:0 auto;">
+        <path d="M 10 70 A 50 50 0 0 1 110 70" fill="none" stroke="#2a2a3e" stroke-width="8" stroke-linecap="round"/>
+        <path d="M 10 70 A 50 50 0 0 1 110 70" fill="none" stroke="${riskC}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${(risk / 100) * 157} 157"/>
+        <text x="60" y="55" text-anchor="middle" font-size="24" font-weight="800" fill="${riskC}" font-family="monospace">${risk}</text>
+        <text x="60" y="72" text-anchor="middle" font-size="9" fill="#8e8ea0" font-family="monospace">/ 100</text>
+      </svg>
+    </div>
+    <!-- Security Grade -->
+    <div class="card" style="padding:20px;text-align:center;">
+      <div style="font-size:10px;letter-spacing:0.12em;color:#8e8ea0;margin-bottom:12px;font-family:monospace;">SECURITY GRADE</div>
+      <div style="width:64px;height:64px;border-radius:50%;margin:0 auto;display:flex;align-items:center;justify-content:center;border:3px solid ${grade.c};background:${grade.c}15;">
+        <span style="font-size:32px;font-weight:900;color:${grade.c};font-family:monospace;">${grade.g}</span>
+      </div>
+      <div style="font-size:10px;color:${grade.c};margin-top:8px;letter-spacing:0.1em;font-family:monospace;">${grade.l}</div>
+    </div>
+    <!-- Severity Donut -->
+    <div class="card" style="padding:20px;text-align:center;">
+      <div style="font-size:10px;letter-spacing:0.12em;color:#8e8ea0;margin-bottom:12px;font-family:monospace;">SEVERITY BREAKDOWN</div>
+      <svg viewBox="0 0 100 100" width="80" height="80" style="display:block;margin:0 auto;">
+        ${donutParts}
+        <text x="50" y="48" text-anchor="middle" font-size="18" font-weight="800" fill="#e0e0e0" font-family="monospace">${total}</text>
+        <text x="50" y="60" text-anchor="middle" font-size="8" fill="#8e8ea0" font-family="monospace">FINDINGS</text>
+      </svg>
+      <div style="display:flex;justify-content:center;gap:8px;margin-top:8px;flex-wrap:wrap;">
+        ${sevEntries.filter(([, c]) => c > 0).map(([sev, count]) =>
+          `<span style="font-size:9px;padding:1px 5px;border-radius:3px;color:${SEVERITY_COLORS[sev]};border:1px solid ${SEVERITY_COLORS[sev]}40;font-family:monospace;">${count} ${sev[0]}</span>`
+        ).join('')}
+      </div>
+    </div>
+    <!-- Breach Exposure -->
+    <div class="card" style="padding:20px;text-align:center;">
+      <div style="font-size:10px;letter-spacing:0.12em;color:#8e8ea0;margin-bottom:12px;font-family:monospace;">EST. BREACH EXPOSURE</div>
+      <div style="font-size:28px;font-weight:800;color:${breachColor};font-family:monospace;margin-top:20px;">${breachStr}</div>
+      <div style="font-size:9px;color:#8e8ea0;margin-top:8px;font-family:monospace;">BASED ON CVSS SEVERITY</div>
+    </div>
+  </div>
 
+  <!-- Severity Count Cards -->
   <div style="display:flex;gap:12px;margin-bottom:24px;">
     ${[
       { label: 'Critical', count: data.counts.critical, color: '#ff4d6a' },
@@ -230,11 +339,6 @@ export function renderReport(data: ReportData): string {
         </div>`,
       )
       .join('')}
-  </div>
-
-  <div style="background:#1a1a2e;border-radius:8px;padding:16px 20px;margin-bottom:24px;">
-    <div style="font-size:13px;font-weight:600;color:#e0e0e0;margin-bottom:10px;">Severity Distribution</div>
-    ${severityChart(data.counts)}
   </div>
 
   <div style="display:flex;gap:12px;margin-bottom:24px;">
@@ -258,23 +362,20 @@ export function renderReport(data: ReportData): string {
   ${data.executiveSummary ? `<div style="background:#1a1a2e;border-radius:8px;padding:20px;font-size:13px;color:#c0c0d0;line-height:1.8;">${escapeHtml(data.executiveSummary)}</div>` : ''}
 </div>
 
-<!-- OWASP Top 10 Heatmap -->
-${data.owaspHeatmap && data.owaspHeatmap.length > 0 ? `
+<!-- OWASP Top 10 Grid -->
 <div class="page page-break">
-  <div style="font-size:22px;font-weight:700;color:#a259ff;margin-bottom:20px;border-bottom:2px solid #a259ff;padding-bottom:8px;">OWASP Top 10 Coverage</div>
-  <div style="background:#1a1a2e;border-radius:8px;padding:16px 20px;">
-    ${data.owaspHeatmap.map(h => `
-      <div style="display:flex;align-items:center;margin:8px 0;gap:12px;">
-        <div style="flex:1;font-size:12px;color:#c0c0d0;">${escapeHtml(h.categoryName)}</div>
-        <div style="width:60px;text-align:center;">${severityBadge(h.highestSeverity)}</div>
-        <div style="width:50px;text-align:right;font-weight:700;color:#a259ff;font-size:14px;">${h.findingCount}</div>
-        <div style="width:120px;height:16px;background:#2a2a3e;border-radius:4px;overflow:hidden;">
-          <div style="width:${Math.min(100, h.weightedScore * 5)}%;height:100%;background:${SEVERITY_COLORS[h.highestSeverity] ?? '#6c8eef'};border-radius:4px;"></div>
-        </div>
-      </div>
-    `).join('')}
+  <div class="section-title">OWASP Top 10 Coverage</div>
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:24px;">
+    ${OWASP_CATS.map(cat => {
+      const d = owaspGrid[cat.id]
+      return `<div style="padding:12px 10px;border-radius:6px;text-align:center;background:${heatColorFn(d.weight, d.highest)};border:1px solid #2a2a3e;">
+        <div style="font-size:11px;font-weight:700;color:#e0e0e0;margin-bottom:2px;font-family:monospace;">${cat.short}</div>
+        <div style="font-size:8px;color:#8e8ea0;line-height:1.2;margin-bottom:4px;">${cat.name}</div>
+        <div style="font-size:16px;font-weight:800;color:${d.total > 0 ? '#e0e0e0' : '#8e8ea0'};font-family:monospace;">${d.total}</div>
+      </div>`
+    }).join('')}
   </div>
-</div>` : ''}
+</div>
 
 <!-- CVSS Distribution -->
 ${data.cvssDistribution && data.cvssDistribution.length > 0 ? `
