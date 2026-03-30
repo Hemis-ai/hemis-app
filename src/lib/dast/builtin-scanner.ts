@@ -1457,8 +1457,7 @@ async function checkAdminDebugEndpoints(targetUrl: string, findings: BuiltinFind
     { path: '/actuator/env', severity: 'CRITICAL' as const, category: 'actuator' },
     { path: '/actuator/configprops', severity: 'CRITICAL' as const, category: 'actuator' },
     { path: '/actuator/heapdump', severity: 'CRITICAL' as const, category: 'actuator' },
-    // GraphQL
-    { path: '/graphql', severity: 'INFO' as const, category: 'api' },
+    // GraphQL — only flag interactive tools, not the endpoint itself (legitimately public)
     { path: '/graphiql', severity: 'MEDIUM' as const, category: 'api' },
     { path: '/playground', severity: 'MEDIUM' as const, category: 'api' },
     // API docs
@@ -1466,10 +1465,14 @@ async function checkAdminDebugEndpoints(targetUrl: string, findings: BuiltinFind
     { path: '/swagger.json', severity: 'MEDIUM' as const, category: 'api' },
     { path: '/openapi.json', severity: 'MEDIUM' as const, category: 'api' },
     { path: '/api-docs', severity: 'MEDIUM' as const, category: 'api' },
-    // Well-known
-    { path: '/.well-known/jwks.json', severity: 'INFO' as const, category: 'wellknown' },
-    { path: '/.well-known/openid-configuration', severity: 'INFO' as const, category: 'wellknown' },
   ]
+
+  // Fetch a known-bad path to fingerprint the site's custom 404 page
+  let soft404Body = ''
+  try {
+    const fake404 = await fetchWithTimeout(new URL('/hemisx-nonexistent-path-check-7f3a', targetUrl).href, 5000, 'Endpoint Probe')
+    if (fake404) soft404Body = fake404.body
+  } catch { /* best-effort */ }
 
   for (const ep of endpoints) {
     onProgress?.(`Probing ${ep.path}...`)
@@ -1489,17 +1492,19 @@ async function checkAdminDebugEndpoints(targetUrl: string, findings: BuiltinFind
 
       if (res.status === 200) {
         const body = await res.text()
-        // Skip if it's clearly a custom 404 or generic page (check for common 404 indicators)
+        // Skip very short responses
         if (body.length < 50) continue
+        // Skip if it matches common 404 text patterns
         const lower = body.toLowerCase()
         if (lower.includes('not found') || lower.includes('404') || lower.includes('page not found')) continue
+        // Skip if the response body closely matches the soft-404 fingerprint (custom 404 pages)
+        if (soft404Body && Math.abs(body.length - soft404Body.length) < 100 && body.slice(0, 500) === soft404Body.slice(0, 500)) continue
 
         const titles: Record<string, string> = {
           admin: `Admin Panel Accessible: ${ep.path}`,
           debug: `Debug Endpoint Exposed: ${ep.path}`,
           actuator: `Spring Boot Actuator Exposed: ${ep.path}`,
           api: `API Documentation/Playground Accessible: ${ep.path}`,
-          wellknown: `Well-Known Endpoint Accessible: ${ep.path}`,
         }
 
         const descriptions: Record<string, string> = {
@@ -1507,7 +1512,6 @@ async function checkAdminDebugEndpoints(targetUrl: string, findings: BuiltinFind
           debug: `A debug/diagnostic endpoint at ${url} is publicly accessible. Debug endpoints often expose sensitive application state, environment variables, or allow code execution.`,
           actuator: `A Spring Boot Actuator endpoint at ${url} is publicly accessible. ${ep.severity === 'CRITICAL' ? 'This endpoint may expose environment variables, credentials, or heap dumps containing sensitive data.' : 'This reveals application health and configuration information.'}`,
           api: `API documentation or interactive playground at ${url} is publicly accessible. This reveals API structure, endpoints, and may allow unauthorized API testing.`,
-          wellknown: `The endpoint ${url} is accessible and provides OAuth/OIDC configuration information. This is informational and may reveal token endpoints and supported flows.`,
         }
 
         findings.push({
@@ -1519,10 +1523,8 @@ async function checkAdminDebugEndpoints(targetUrl: string, findings: BuiltinFind
           description: descriptions[ep.category] || `${url} is publicly accessible.`,
           affectedUrl: url,
           responseEvidence: `HTTP 200 OK (${body.length} bytes)`,
-          remediation: ep.category === 'wellknown'
-            ? 'Ensure only necessary claims and scopes are exposed in OIDC configuration.'
-            : `Restrict access to ${ep.path} via authentication, IP whitelisting, or firewall rules. Remove debug/admin endpoints from production.`,
-          confidenceScore: ep.category === 'wellknown' ? 100 : 75,
+          remediation: `Restrict access to ${ep.path} via authentication, IP whitelisting, or firewall rules. Remove debug/admin endpoints from production.`,
+          confidenceScore: 75,
         })
       }
     } catch { /* timeout */ }
