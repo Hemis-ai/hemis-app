@@ -164,8 +164,11 @@ class Scanner:
                         results = await plugin.scan(target, self.ctx)
                         findings.extend(results)
                         self.total_payloads += plugin.payloads_sent
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(
+                            "Passive plugin %s failed on %s: %s",
+                            plugin.name, target.url, e,
+                        )
 
             # ── Active scan (injection-based, controlled concurrency) ──
             if not is_static:
@@ -196,8 +199,11 @@ class Scanner:
                                 results = await plugin.scan(target, self.ctx)
                                 target_findings.extend(results)
                                 self.total_payloads += plugin.payloads_sent
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.warning(
+                                "Active plugin %s failed on %s: %s",
+                                plugin.name, target.url, e,
+                            )
                     tested += 1
                     if self.on_progress:
                         self.on_progress(tested, total, self.total_payloads, f"Testing endpoint {tested}/{total}")

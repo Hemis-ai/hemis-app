@@ -109,6 +109,7 @@ class Crawler:
         self.visited: set[str] = set()
         self.result = CrawlResult()
         self._semaphore = asyncio.Semaphore(settings.max_concurrent_requests)
+        self._client: Optional[httpx.AsyncClient] = None
 
     def _in_scope(self, url: str) -> bool:
         parsed = urlparse(url)
