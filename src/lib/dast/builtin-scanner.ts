@@ -1239,7 +1239,7 @@ function checkInfoDisclosureBody(page: CrawledPage, findings: BuiltinFinding[]) 
 async function checkVerboseErrors(targetUrl: string, crawled: CrawledPage[], findings: BuiltinFinding[]) {
   // Test 1: Append SQL-like character to trigger errors
   const errorProbes = [
-    { suffix: "'", desc: 'single quote (SQL error trigger)' },
+    { suffix: "?id=1'", desc: 'single quote (SQL error trigger)' },
     { suffix: '/<script>', desc: 'XSS probe in path' },
     { suffix: '/../../etc/passwd', desc: 'path traversal probe' },
   ]
@@ -1247,7 +1247,7 @@ async function checkVerboseErrors(targetUrl: string, crawled: CrawledPage[], fin
   for (const probe of errorProbes) {
     try {
       countPayload()
-      const testUrl = targetUrl.replace(/\/?$/, probe.suffix)
+      const testUrl = targetUrl.replace(/\/?$/, '') + probe.suffix
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 5000)
       const res = await fetch(testUrl, {
