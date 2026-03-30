@@ -66,7 +66,9 @@ Output ONLY valid JSON matching this structure:
   "keyGaps": ["string", ...] — top compliance gaps across all frameworks
 }
 
-Be precise with control IDs. Only map findings to controls where there is a clear, defensible connection.`
+Be precise with control IDs. Only map findings to controls where there is a clear, defensible connection.
+Do NOT fabricate or guess control IDs — only reference controls you are certain exist in the framework. If a finding does not clearly map to a specific control, omit it rather than force a mapping.
+For HIPAA: only map findings if the application handles PHI/health data — if unknown, note "HIPAA applicability depends on data classification" in keyGaps instead of assuming it applies.`
 
   const findingsList = findings
     .map((f) => `[${f.index}] ${f.severity} | ${f.type} | ${f.owaspCategory}${f.cweId ? ` | ${f.cweId}` : ''}${f.pciDssRefs.length ? ` | PCI: ${f.pciDssRefs.join(',')}` : ''}${f.soc2Refs.length ? ` | SOC2: ${f.soc2Refs.join(',')}` : ''}`)

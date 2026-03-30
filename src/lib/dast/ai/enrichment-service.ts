@@ -66,7 +66,8 @@ export async function enrichScanFindings(scanId: string, callbacks: EnrichmentCa
           const updateData: Record<string, unknown> = { businessImpact: analysis.businessImpact }
 
           // Store enhanced analysis data as JSON in the finding
-          const enrichedMeta: Record<string, unknown> = {}
+          // All fields below are AI-generated and should be treated as advisory, not authoritative
+          const enrichedMeta: Record<string, unknown> = { _aiGenerated: true }
           if (analysis.attackScenario) enrichedMeta.attackScenario = analysis.attackScenario
           if (analysis.falsePositiveLikelihood) enrichedMeta.falsePositiveLikelihood = analysis.falsePositiveLikelihood
           if (analysis.falsePositiveReason) enrichedMeta.falsePositiveReason = analysis.falsePositiveReason

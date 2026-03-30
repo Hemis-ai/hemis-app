@@ -1706,22 +1706,31 @@ function checkDOMXSSHeuristic(page: CrawledPage, findings: BuiltinFinding[]) {
   const ct = page.headers['content-type'] || ''
   if (!ct.includes('text/html') && !ct.includes('javascript')) return
 
-  const sources = [
-    'location.hash', 'location.search', 'location.href', 'location.pathname',
-    'document.referrer', 'document.URL', 'document.documentURI',
-    'window.name', 'URLSearchParams',
-    'document.cookie', // can be a source if attacker-controlled
-  ]
-
-  const sinks = [
-    'innerHTML', 'outerHTML', 'document.write', 'document.writeln',
-    'insertAdjacentHTML', '.html(', // jQuery
-    'eval(', 'setTimeout(', 'setInterval(', 'new Function(',
-    'window.location', 'location.assign', 'location.replace',
-    'element.src', 'element.href', 'element.action',
-  ]
-
   const body = page.body
+  const lower = body.toLowerCase()
+
+  // Skip pages from known frameworks whose bundled JS always contains source/sink patterns
+  // These frameworks handle DOM updates safely via virtual DOM or template compilation
+  if (lower.includes('__next') || lower.includes('_next/static')  // Next.js
+    || lower.includes('__react') || lower.includes('reactdom')     // React
+    || lower.includes('ng-version') || lower.includes('ng-app')    // Angular
+    || lower.includes('__vue__') || lower.includes('vue.min.js')   // Vue
+  ) return
+
+  // High-confidence sources — direct user input vectors
+  const sources = [
+    'location.hash', 'location.search',
+    'document.referrer', 'document.URL', 'document.documentURI',
+    'window.name',
+  ]
+
+  // High-risk sinks only — removed setTimeout/setInterval/window.location (rarely XSS vectors)
+  const sinks = [
+    'innerHTML', 'outerHTML', 'document.write(', 'document.writeln(',
+    'insertAdjacentHTML', '.html(', // jQuery
+    'eval(', 'new Function(',
+  ]
+
   const foundSources: string[] = []
   const foundSinks: string[] = []
 
@@ -1732,18 +1741,17 @@ function checkDOMXSSHeuristic(page: CrawledPage, findings: BuiltinFinding[]) {
     if (body.includes(sink)) foundSinks.push(sink)
   }
 
-  // Only report if both sources AND sinks are present (indicating potential dataflow)
+  // Require at least one direct user-input source AND one dangerous sink
   if (foundSources.length > 0 && foundSinks.length > 0) {
     findings.push({
       type: 'DOM_XSS', owaspCategory: 'A03:2021 Injection',
-      cweId: 'CWE-79', severity: 'MEDIUM', cvssScore: 6.1, riskScore: 50,
+      cweId: 'CWE-79', severity: 'LOW', cvssScore: 6.1, riskScore: 30,
       title: 'Potential DOM-Based XSS (Source + Sink Detected)',
-      description: `${page.url} contains JavaScript with both user-controllable sources (${foundSources.slice(0, 3).join(', ')}) and dangerous sinks (${foundSinks.slice(0, 3).join(', ')}). If data flows from source to sink without sanitization, DOM XSS is possible.`,
+      description: `${page.url} contains JavaScript with user-controllable sources (${foundSources.slice(0, 3).join(', ')}) and dangerous sinks (${foundSinks.slice(0, 3).join(', ')}). Manual review needed to confirm data flows from source to sink without sanitization.`,
       affectedUrl: page.url,
       responseEvidence: `Sources: ${foundSources.join(', ')}\nSinks: ${foundSinks.join(', ')}`,
       remediation: 'Sanitize all user-controllable inputs before passing to DOM manipulation functions. Use textContent instead of innerHTML. Avoid eval() and document.write().',
-      confidenceScore: 55, // Heuristic — needs manual confirmation
-      businessImpact: 'DOM XSS allows attackers to execute JavaScript in the victim\'s browser, potentially stealing session tokens, credentials, or performing actions on behalf of the user.',
+      confidenceScore: 40, // Heuristic only — requires manual confirmation
     })
   }
 }

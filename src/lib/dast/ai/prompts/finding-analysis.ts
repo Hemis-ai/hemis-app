@@ -38,6 +38,8 @@ Your analysis must be:
 2. Technically precise: reference specific CWEs, attack techniques, and exploitation paths
 3. Pragmatic about false positives: assess likelihood based on evidence quality and context
 4. Prioritized: assign a 1-100 priority score considering exploitability, data sensitivity, and blast radius
+5. Grounded in evidence: only reference CWEs and compliance frameworks you are certain about — do NOT guess control IDs. If unsure, omit rather than fabricate
+6. Conservative with attack scenarios: describe only exploitation paths that are realistic given the evidence provided. Do NOT invent attack chains that require assumptions beyond the data shown
 
 Output ONLY valid JSON matching this structure:
 {
