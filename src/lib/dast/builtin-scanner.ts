@@ -1377,10 +1377,22 @@ async function checkOpenRedirect(crawled: CrawledPage[], findings: BuiltinFindin
 // ─── Phase 1H: Prototype Pollution ───────────────────────────────────────
 
 async function checkPrototypePollution(targetUrl: string, findings: BuiltinFinding[]) {
+  const CANARY = 'hemisx_pp_canary_7f3a'  // Unique value unlikely to appear in normal responses
+
+  // Fetch baseline response to compare against (filters out sites that reflect query params)
+  let baselineBody = ''
+  try {
+    const baseRes = await fetchWithTimeout(targetUrl, 5000, 'Prototype Pollution')
+    baselineBody = baseRes?.body ?? ''
+  } catch { /* use empty baseline */ }
+
+  // If the canary value already appears in the baseline, skip (extremely unlikely but safe)
+  if (baselineBody.includes(CANARY)) return
+
   const payloads = [
-    '__proto__[polluted]=hemis_test',
-    'constructor[prototype][polluted]=hemis_test',
-    '__proto__.polluted=hemis_test',
+    `__proto__[polluted]=${CANARY}`,
+    `constructor[prototype][polluted]=${CANARY}`,
+    `__proto__.polluted=${CANARY}`,
   ]
 
   for (const payload of payloads) {
@@ -1398,8 +1410,9 @@ async function checkPrototypePollution(targetUrl: string, findings: BuiltinFindi
       emitTelemetry('GET', testUrl, 'Prototype Pollution', payload, res.status, Date.now() - ppStart)
 
       const body = await res.text()
-      // Check if our pollution value appears in the response (indicating server-side pollution)
-      if (body.includes('hemis_test') && !body.includes('__proto__')) {
+      // Only flag if canary appears in the polluted response but NOT in the baseline,
+      // and not as a simple reflection of the full payload (e.g. in a URL echo or error message)
+      if (body.includes(CANARY) && !body.includes(payload)) {
         findings.push({
           type: 'PROTOTYPE_POLLUTION', owaspCategory: 'A03:2021 Injection',
           cweId: 'CWE-1321', severity: 'HIGH', cvssScore: 7.3, riskScore: 70,
@@ -1408,9 +1421,9 @@ async function checkPrototypePollution(targetUrl: string, findings: BuiltinFindi
           affectedUrl: targetUrl,
           payload: payload,
           requestEvidence: `GET ${testUrl}`,
-          responseEvidence: 'Pollution value "hemis_test" reflected in response',
+          responseEvidence: `Pollution canary "${CANARY}" appeared in response without full payload reflection`,
           remediation: 'Sanitize user input before merging into objects. Use Object.create(null) for lookups. Avoid recursive object merging with user-controlled data.',
-          confidenceScore: 80,
+          confidenceScore: 85,
         })
         break // One finding is enough
       }
