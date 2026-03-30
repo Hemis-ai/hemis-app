@@ -17,7 +17,11 @@ import { enrichScanFindings } from './ai/enrichment-service'
 import { runBuiltinScan, type BuiltinFinding } from './builtin-scanner'
 import { pushTelemetryEvent, clearTelemetry } from './telemetry-store'
 
-// In-memory progress store for SSE polling — includes a scrolling activity log
+// In-memory progress store for SSE polling — includes a scrolling activity log.
+// WARNING: This Map lives in the Node.js process. In serverless environments (e.g. Vercel),
+// each request may hit a different Lambda instance, so progress data written by the scan
+// won't be visible to GET polling requests. Requires a persistent server (Docker, Railway,
+// long-lived Node process) or migration to Redis/Upstash for serverless compatibility.
 export interface ProgressLogEntry {
   timestamp: string
   phase: string

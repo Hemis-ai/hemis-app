@@ -5,7 +5,10 @@ import { runDastScan } from '@/lib/dast/scan-orchestrator'
 import { isDastEngineRunning, proxyToEngine } from '@/lib/dast/engine-proxy'
 import { runBuiltinScan } from '@/lib/dast/builtin-scanner'
 
-// In-memory store for direct scans (no DB mode)
+// In-memory store for direct scans (no DB mode).
+// WARNING: This Map lives in the Node.js process. In serverless (e.g. Vercel), the POST
+// that starts the scan and the GET that polls for results may hit different Lambda instances,
+// so the scan data won't be found. Requires a persistent server or migration to Redis/Upstash.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const directScanStore = new Map<string, { scan: any; findings: any[]; promise?: Promise<void>; error?: string }>()
 

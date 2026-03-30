@@ -2,6 +2,11 @@
  * In-memory telemetry store for live attack feed.
  * Ring buffer of recent HTTP requests made during a DAST scan,
  * with computed stats (RPS, latency, status code distribution).
+ *
+ * WARNING: This store lives in the Node.js process. In serverless environments
+ * (e.g. Vercel), the scan runs in one Lambda instance while telemetry polling
+ * may hit a different instance — resulting in an empty live feed. Requires a
+ * persistent server or migration to Redis/Upstash for serverless compatibility.
  */
 
 export interface AttackTelemetryEvent {
